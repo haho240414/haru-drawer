@@ -117,6 +117,7 @@ def handle_phone(rel: Relay, settings: dict) -> dict:
                 acks.append(obj.get("id"))
                 out["items"] += 1
                 store.kv_set("last_share_at", time.time())
+                store.kv_set("phone_items_total", int(store.kv_get("phone_items_total", 0) or 0) + 1)
             elif t == "refresh":
                 out["refresh"] = True
             elif t == "resend":

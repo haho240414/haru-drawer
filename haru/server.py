@@ -144,7 +144,8 @@ def api_pairing():
         s = config.update_settings({"relay": new_pairing(s["relay"].get("server") or "https://ntfy.sh")})
     code = pairing_code(s["relay"])
     import qrcode
-    img = qrcode.make(code, box_size=8, border=2)
+    # QR 은 haru://pair/… — 앱의 'QR 찍기'뿐 아니라 폰 기본 카메라로 찍어도 앱이 열려 연결된다
+    img = qrcode.make("haru://pair/" + code, box_size=8, border=2)
     buf = io.BytesIO()
     img.save(buf, "PNG")
     return jsonify({"code": code, "qr": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode(),

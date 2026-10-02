@@ -123,7 +123,10 @@ class Relay:
             return None
         if inc.attachment_expires and inc.attachment_expires < time.time():
             return None
-        r = self.http.get(inc.attachment_url, timeout=max(self.timeout, 120))
+        url = inc.attachment_url
+        if "/file/" in url:   # 첨부는 같은 서버의 /file/… — 우리가 아는 서버 주소로 맞춘다 (시험 서버·사설 ntfy)
+            url = f"{self.server}/file/" + url.rsplit("/file/", 1)[1]
+        r = self.http.get(url, timeout=max(self.timeout, 120))
         if r.status_code in (404, 410):
             return None
         r.raise_for_status()

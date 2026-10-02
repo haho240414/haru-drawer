@@ -12,6 +12,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -101,6 +102,9 @@ def render(card: dict, style: str, out: Path, width: int = 1080, height: int = 2
                "--default-background-color=00000000", f"--force-device-scale-factor={density}",
                f"--window-size={css_w},{css_h}", "--virtual-time-budget=2500",
                f"--screenshot={out}", url]
+        if sys.platform.startswith("linux"):
+            # CI(우분투)는 사용자 네임스페이스 제한으로 크롬 샌드박스가 안 뜰 수 있다 — 우리 로컬 페이지만 여니 꺼도 됨
+            cmd.insert(1, "--no-sandbox")
         # 함정: 이 맥의 크롬(헤드리스)은 스크린숏을 저장하고도 스스로 안 끝난다 → 파일이 다 써지면 끈다
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         deadline, last_size, stable = time.time() + timeout, -1, 0
