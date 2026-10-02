@@ -118,6 +118,21 @@ TODO_HINT = re.compile(r"(하기|챙기기|사기|신청|예약|확인|전화|�
 SITE_CAT = {"realestate": "부동산", "shopping": "쇼핑", "code": "AI·테크", "sns": "콘텐츠·SNS"}
 
 
+SITE_AFFIX = re.compile(r"^(GitHub - )|( - YouTube| : 네이버 블로그| : 네이버 뉴스| \| .{1,30})$")
+
+
+def shorten(text: str, n: int) -> str:
+    """n 글자 안으로, 가능하면 단어 경계에서 자르고 '…'."""
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if len(text) <= n:
+        return text
+    cut = text[: n - 1]
+    sp = cut.rfind(" ")
+    if sp >= n * 0.5:
+        cut = cut[:sp]
+    return cut.rstrip(" -:|·,") + "…"
+
+
 def heuristic_item(it: dict, categories: list[str]) -> dict:
     meta = it.get("meta") or {}
     blob = " ".join(str(x) for x in (it.get("text"), meta.get("title"), meta.get("description"), meta.get("channel")) if x)
@@ -131,6 +146,9 @@ def heuristic_item(it: dict, categories: list[str]) -> dict:
     first_line = (it.get("text") or "").strip().split("\n")[0]
     title = (meta.get("title") or first_line or KIND_KO.get(kind, kind)).strip()
     title = re.sub(r"https?://\S+", "", title).strip() or (meta.get("site") or "링크")
+    title = SITE_AFFIX.sub("", title).strip() or title
+    if ": " in title and len(title) > 28:          # 'zeikar/kakaotalk-viewer: KakaoTalk chat viewer…' → 앞부분
+        title = title.split(": ", 1)[0]
     summary = meta.get("description") or (it.get("text") or "")[:160]
     intent = {"link": "나중에 읽기", "image": "참고 자료", "video": "기록", "file": "참고 자료",
               "audio": "기록"}.get(kind, "기록")
@@ -140,10 +158,10 @@ def heuristic_item(it: dict, categories: list[str]) -> dict:
         intent = "구매 검토"
     if meta.get("placeholder"):
         summary = f"{KIND_KO.get(kind, kind)} (원본이 없어 내용 확인 불가)"
-    return {"category": cat, "title": title[:28], "summary": summary[:300], "key_points": [],
-            "intent": intent, "actions": [first_line[:25]] if intent == "할 일" else [], "tags": [],
+    return {"category": cat, "title": shorten(title, 28), "summary": shorten(summary, 300), "key_points": [],
+            "intent": intent, "actions": [shorten(first_line, 25)] if intent == "할 일" else [], "tags": [],
             "importance": 3 if intent == "할 일" else (1 if meta.get("placeholder") else 2),
-            "lock_line": title[:18], "source": "heuristic"}
+            "lock_line": shorten(title, 18), "source": "heuristic"}
 
 
 # ---------- AI 분석 ----------
@@ -312,8 +330,8 @@ def heuristic_digest(day: str, views: list[dict]) -> dict:
                     "insight": f"{n}개 모음"} for c, n in cats.most_common(5)],
         "todos": todos,
         "read_later": [v["id"] for v in views if v["intent"] == "나중에 읽기"][:6],
-        "lock": {"title": f"오늘 {len(views)}개 모음", "lines": [v["lock_line"] or v["title"][:20] for v in top[:3]]},
-        "tomorrow": top[0]["title"] if top else "",
+        "lock": {"title": f"오늘 {len(views)}개 모음", "lines": [v["lock_line"] or shorten(v["title"], 20) for v in top[:3]]},
+        "tomorrow": shorten(top[0]["title"], 40) if top else "",
         "_llm": {"backend": "heuristic"},
     }
 

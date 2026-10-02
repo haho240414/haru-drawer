@@ -154,7 +154,8 @@ class HaruPlugin : Plugin() {
             return JSONObject().put("ok", false).put("msg", e.message)
         }
         val p = Prefs(context)
-        p.savePairing(pairing)
+        val same = p.key == pairing.key && p.up == pairing.up && p.down == pairing.down && p.server == pairing.server
+        if (!same) p.savePairing(pairing)
         SyncWorker.schedule(context)
         val r = SyncEngine.run(context)   // 바로 인사하고 받아 오기
         emit("paired", JSONObject().put("mac", pairing.name))

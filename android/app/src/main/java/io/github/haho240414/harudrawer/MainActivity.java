@@ -13,7 +13,10 @@ public class MainActivity extends BridgeActivity {
         // 이 앱 안의 플러그인: 맥 연결·주고받기·잠금화면 (HaruPlugin.kt)
         registerPlugin(HaruPlugin.class);
         super.onCreate(savedInstanceState);
-        handleLink(getIntent());
+        // 화면이 다시 만들어진 경우(복원)·최근 앱에서 연 경우엔 처음 연결 딥링크를 다시 처리하지 않는다
+        boolean fromHistory = (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0;
+        if (savedInstanceState == null && !fromHistory) handleLink(getIntent());
+        else lastHandled = getIntent();
     }
 
     @Override

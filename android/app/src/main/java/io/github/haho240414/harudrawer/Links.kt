@@ -23,7 +23,9 @@ object Links {
                 HaruPlugin.io.execute {
                     try {
                         val p = Pairing.parse(code)
-                        Prefs(ctx).savePairing(p)
+                        val prefs = Prefs(ctx)
+                        val same = prefs.key == p.key && prefs.up == p.up && prefs.down == p.down && prefs.server == p.server
+                        if (!same) prefs.savePairing(p)   // 같은 코드를 또 열면 받은 기록을 지우지 않는다
                         SyncWorker.schedule(ctx)
                         val r = SyncEngine.run(ctx)
                         Log.i(TAG, "연결: ${p.name} ${r}")

@@ -33,7 +33,7 @@ for TRY in 1 2 3; do
 done
 $PY tools/ci_mac.py wait-phone 150 | tee "$OUT/phone.json"
 check "폰이 맥에 인사함 (화면 크기 전달)" '[ -s "$OUT/phone.json" ] && grep -q "\"w\"" "$OUT/phone.json"'
-sleep 6
+sleep 15   # CI 에뮬레이터(소프트웨어 그리기)는 웹 화면이 10초 넘게 걸려 뜬다
 A exec-out screencap -p > "$OUT/1_app_paired.png"
 
 step "2. 공유 3종"
@@ -43,24 +43,17 @@ A shell am start -W -a android.intent.action.SEND -t text/plain \
   --es android.intent.extra.TEXT "https://github.com/zeikar/kakaotalk-viewer" \
   -n "$PKG/.ShareActivity"
 sleep 2
-# (나) 캡처: 화면을 찍어 사진 폴더에 두고 미디어 저장소 주소로 공유
-A shell screencap -p /sdcard/Pictures/haru_capture.png
-A shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Pictures/haru_capture.png >/dev/null 2>&1 || true
+# (나) 캡처 · (다) 카톡 '나와의 채팅' 내보내기 txt
+# adb 셸은 갤러리·다운로드 파일 읽기 권한을 남의 앱에 못 넘겨줘서(SecurityException — 첫 점검에서 확인),
+# 실제 앱처럼 FileProvider 주소 + 읽기 권한을 붙여 보내는 점검용 화면(TestSendActivity, 디버그 빌드에만)으로 보낸다
+A shell screencap -p /data/local/tmp/haru_capture.png
+A push tests/fixtures/android_self.txt /data/local/tmp/KakaoTalkChats.txt
+A shell chmod 644 /data/local/tmp/haru_capture.png /data/local/tmp/KakaoTalkChats.txt
+A shell run-as "$PKG" sh -c "'mkdir -p cache/share && cp /data/local/tmp/haru_capture.png /data/local/tmp/KakaoTalkChats.txt cache/share/ && ls -la cache/share'"
+A shell am start -W -n "$PKG/.TestSendActivity" --es file share/haru_capture.png --es mime image/png
 sleep 3
-IMG_ID="$(A shell content query --uri content://media/external/images/media --projection _id:_display_name | tr -d '\r' | grep haru_capture | sed -E 's/.*_id=([0-9]+).*/\1/' | tail -1)"
-echo "캡처 미디어 id: $IMG_ID"
-A shell am start -W -a android.intent.action.SEND -t image/png --grant-read-uri-permission \
-  --eu android.intent.extra.STREAM "content://media/external/images/media/$IMG_ID" -n "$PKG/.ShareActivity"
-sleep 2
-# (다) 카톡 '나와의 채팅' 내보내기 txt
-A push tests/fixtures/android_self.txt /sdcard/Download/KakaoTalkChats.txt
-A shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/KakaoTalkChats.txt >/dev/null 2>&1 || true
+A shell am start -W -n "$PKG/.TestSendActivity" --es file share/KakaoTalkChats.txt --es mime text/plain
 sleep 3
-TXT_ID="$(A shell content query --uri content://media/external/file --projection _id:_display_name | tr -d '\r' | grep KakaoTalkChats | sed -E 's/.*_id=([0-9]+).*/\1/' | tail -1)"
-echo "대화 파일 id: $TXT_ID"
-A shell am start -W -a android.intent.action.SEND -t text/plain --grant-read-uri-permission \
-  --eu android.intent.extra.STREAM "content://media/external/file/$TXT_ID" -n "$PKG/.ShareActivity"
-sleep 2
 A shell am start -W -a android.intent.action.VIEW -d "haru://sync" "$PKG"
 $PY tools/ci_mac.py wait-items 3 240 | tee "$OUT/items.txt"
 check "맥이 공유 3건 받음" 'grep -q "받은 항목 [3-9]" "$OUT/items.txt"'
@@ -90,8 +83,11 @@ A shell dumpsys wallpaper > "$OUT/wallpaper.txt" 2>&1 || true
 
 step "4. 화면"
 A shell am start -W -n "$PKG/.MainActivity"
-sleep 6
+sleep 15
 A exec-out screencap -p > "$OUT/2_app_report.png"
+# 재연결 확인: 화면을 다시 띄워도 연결 딥링크를 또 처리하지 않아야 한다
+RELINK="$(A logcat -d -s HaruLinks:I | grep -c '연결:' || true)"
+echo "연결 처리 횟수: $RELINK"
 # PIN 을 걸어 잠금화면이 반드시 뜨게 → 끄고 켜서 찍기
 A shell locksettings set-pin 1234 || true
 A shell input keyevent 223
