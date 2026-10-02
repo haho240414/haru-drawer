@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "haru-dev",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["tools/dev-server.sh"],
+      "port": 8891
+    }
+  ]
+}

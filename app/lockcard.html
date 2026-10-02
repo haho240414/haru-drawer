@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>잠금화면 카드</title>
+<link rel="stylesheet" href="css/lockcard.css">
+</head>
+<body>
+<div id="card" class="lc"></div>
+<script type="module">
+  // 맥 렌더러는 window.__CARD__ / __STYLE__ 를 넣고 찍는다. 그냥 열면 예시 데이터로 보인다.
+  import { renderLockCard } from "./js/lockcard.js";
+  const params = new URLSearchParams(location.search);
+  const sample = {
+    label: "10월 1일 (수)", count: 12, title: "회천 매물 비교하고 AI 자동화 파고든 날",
+    lines: ["힐스테이트 회천 84㎡ 5.2억", "Claude 신모델 발표 정리", "교육계획 PDF 검토 마감 10/5"],
+    todos: 3, readLater: 4, cats: [["부동산", 5], ["AI·테크", 4], ["업무", 2], ["쇼핑", 1]], updated: "21:40",
+  };
+  let fromHash = null;
+  const m = location.hash.match(/data=([^&]+)/);
+  if (m) {
+    const b64 = m[1].replace(/-/g, "+").replace(/_/g, "/");
+    fromHash = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))));
+  }
+  const card = window.__CARD__ || fromHash || sample;
+  const style = window.__STYLE__ || params.get("style") || "A";
+  const root = document.getElementById("card");
+  if (params.get("w")) root.style.setProperty("--w", params.get("w") + "px");
+  if (params.get("h")) root.style.setProperty("--h", params.get("h") + "px");
+  renderLockCard(root, card, style);
+  document.fonts.ready.then(() => { document.body.dataset.ready = "1"; });
+</script>
+</body>
+</html>
