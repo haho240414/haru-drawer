@@ -82,6 +82,35 @@ def pdf_text(path: Path, limit: int = 4000) -> str:
         return f"(PDF 읽기 실패: {type(e).__name__})"
 
 
+UPGRADE_DAYS = 3
+
+
+def requeue_heuristic(settings: dict, log=print) -> set[str]:
+    """AI 를 못 써서 규칙 기반으로 정리한 최근 항목을, AI 를 다시 쓸 수 있게 되면 다시 분석 대기로 돌린다."""
+    from . import llm
+    from .timeutil import shift_day, today
+    if settings["llm"].get("backend") == "fake" or not llm.available(settings):
+        return set()
+    days: set[str] = set()
+    t0 = today(settings.get("day_boundary_hour", 4))
+    n = 0
+    for k in range(UPGRADE_DAYS):
+        day = shift_day(t0, -k)
+        for it in store.items_for_day(day):
+            a = it.get("analysis") or {}
+            if it["status"] == "analyzed" and a.get("source") == "heuristic" and not (it.get("meta") or {}).get("placeholder") \
+                    and it["kind"] not in ("video", "audio") and n < 30:
+                store.update_item(it["id"], status="enriched")
+                days.add(day)
+                n += 1
+        dg = store.get_digest(day)
+        if dg and (dg.get("data") or {}).get("items") and dg["data"].get("llm", {}).get("backend") == "heuristic":
+            days.add(day)
+    if n:
+        log(f"AI 를 다시 쓸 수 있어 규칙 기반으로 정리했던 {n}개를 다시 분석해요")
+    return days
+
+
 def latest_day(settings: dict) -> str | None:
     days = store.days_with_items(limit=1)
     return days[0]["day"] if days else None
@@ -142,6 +171,8 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
         store.kv_set("run_state", {"running": True, "started": iso(now())})
         try:
             touched = set(enrich_pending(log))
+            upgrade = requeue_heuristic(settings, log)
+            touched |= upgrade
             pending = store.items_by_status(("enriched",))
             if pending:
                 log(f"AI 분석: {len(pending)}개")
@@ -156,7 +187,7 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
                     target.add(d)
             built = []
             for day in sorted(target):
-                dg = build_digest(day, settings, force=force_digest, log=log)
+                dg = build_digest(day, settings, force=force_digest or day in upgrade, log=log)
                 if dg:
                     built.append(day)
             published = []

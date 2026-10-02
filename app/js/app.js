@@ -76,6 +76,7 @@ async function showDay(day) {
   }
   const ctx = {
     style,
+    canHide: !isNative,
     thumbUrl: (it) => Source.thumbUrl(it),
     fullUrl: (it) => Source.fullUrl(it),
     lockNote: isNative ? "설정에서 잠금화면 배경으로 쓰기·알림을 켜고 끌 수 있어요." : "폰과 연결하면 이 카드가 폰 잠금화면에 자동으로 들어가요 (배경은 폰에서 고름).",
@@ -87,8 +88,16 @@ async function showDay(day) {
   const rep = document.getElementById("report");
   renderReport(rep, data, ctx);
   rep.onclick = async (ev) => {
-    const t = ev.target.closest("[data-goto],[data-open],[data-style],[data-act],img[data-full]");
+    const t = ev.target.closest("[data-goto],[data-open],[data-style],[data-act],[data-hide],img[data-full]");
     if (!t) return;
+    if (t.dataset.hide) {
+      if (!confirm("이 항목을 보고서에서 뺄까요? (그날 보고서를 다시 정리해요)")) return;
+      await Source.hide(t.dataset.hide);
+      t.closest(".item").style.opacity = 0.35;
+      toast("뺐어요 — 보고서를 다시 정리할게요");
+      runNow({ day });
+      return;
+    }
     if (t.dataset.goto) {
       ev.preventDefault();
       const el = document.getElementById("it-" + cssId(t.dataset.goto));
@@ -106,7 +115,7 @@ async function showDay(day) {
       v.onclick = () => v.remove();
       document.body.append(v);
     } else if (t.dataset.act === "run") {
-      runNow();
+      runNow({ day });
     } else if (t.dataset.act === "apply") {
       const r = await Source.applyLockscreen();
       toast(r.ok ? "잠금화면에 적용했어요" : (r.msg || "적용하지 못했어요"));
@@ -163,7 +172,7 @@ async function showAdd() {
       ? `<div><span class="ok">✓</span> ${esc(r.file)} — ${r.new != null ? `새 항목 ${r.new}개 (중복 ${r.dup}, ${esc((r.days || []).join(", "))})` : `${esc(r.kind)} ${esc(r.result)}`}</div>`
       : `<div><span class="bad">✗</span> ${esc(r.file)} — ${esc(r.error)}</div>`).join("")
       + `<div style="margin-top:10px"><button class="btn primary small" id="runAfter">지금 정리하기</button></div>`;
-    document.getElementById("runAfter").onclick = runNow;
+    document.getElementById("runAfter").onclick = () => runNow();
   };
   drop.onclick = () => file.click();
   file.onchange = () => send([...file.files]);
@@ -320,13 +329,13 @@ async function showSettingsPhone() {
 }
 
 // ---------------- 정리하기 버튼 ----------------
-async function runNow() {
+async function runNow(opts = {}) {
   if (isNative) {
     const r = await Source.run();
     toast(r.ok ? "맥에 정리를 부탁했어요 (몇 분 걸려요)" : (r.msg || "맥과 연결돼 있지 않아요"));
     return;
   }
-  const r = await Source.run({ force: false });
+  const r = await Source.run({ force: false, ...opts });
   if (!r.ok) return toast(r.msg || "정리를 시작하지 못했어요");
   $run.disabled = true;
   $run.textContent = "정리 중…";
@@ -344,7 +353,7 @@ async function runNow() {
   toast("정리했어요");
   route();
 }
-$run.onclick = runNow;
+$run.onclick = () => runNow();
 
 // ---------------- 길 찾기 ----------------
 async function route() {

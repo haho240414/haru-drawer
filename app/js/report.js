@@ -107,6 +107,7 @@ function itemHtml(it, ctx) {
         ${it.url ? `<a href="${esc(it.url)}" data-open="${esc(it.url)}">${esc(it.site || host)} 열기 ↗</a>` : ""}
         ${it.duration ? `<span class="muted">${fmtDuration(it.duration)}${it.channel ? ` · ${esc(it.channel)}` : ""}</span>` : ""}
         ${it.note ? `<span class="note">${esc(it.note)}</span>` : ""}
+        ${ctx.canHide ? `<button class="chip" data-hide="${esc(it.id)}" title="보고서에서 빼고 다시 정리">빼기</button>` : ""}
       </div>
     </div>
     ${thumb ? `<img class="thumb" src="${thumb}" alt="" data-full="${esc(ctx.fullUrl(it) || thumb)}" loading="lazy">` : ""}

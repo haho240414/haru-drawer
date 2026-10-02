@@ -10,10 +10,12 @@ import base64
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -21,6 +23,53 @@ import requests
 
 class LLMError(RuntimeError):
     pass
+
+
+class LLMQuotaError(LLMError):
+    """구독 사용 한도 초과 — retry_at(유닉스 초)까지 이 백엔드를 쉬게 한다."""
+
+    def __init__(self, msg: str, retry_at: float):
+        super().__init__(msg)
+        self.retry_at = retry_at
+
+
+RE_RETRY = re.compile(r"try again at (\d{1,2}):(\d{2})\s*([AP]M)?", re.IGNORECASE)
+
+
+def parse_retry_at(text: str, now_ts: float | None = None) -> float:
+    """codex 의 'try again at 3:11 AM'(맥 현지 시각) → 유닉스 초. 못 읽으면 30분 뒤."""
+    now_ts = time.time() if now_ts is None else now_ts
+    m = RE_RETRY.search(text or "")
+    if not m:
+        return now_ts + 1800
+    h, mi = int(m.group(1)), int(m.group(2))
+    ap = (m.group(3) or "").upper()
+    if mi > 59 or (ap and not 1 <= h <= 12) or (not ap and h > 23):
+        return now_ts + 1800
+    if ap == "PM" and h != 12:
+        h += 12
+    if ap == "AM" and h == 12:
+        h = 0
+    base = datetime.fromtimestamp(now_ts)          # 맥 현지 시각 기준 (codex 가 그렇게 찍음)
+    t = base.replace(hour=h, minute=mi, second=0, microsecond=0)
+    if t.timestamp() <= now_ts:
+        t += timedelta(days=1)
+    return t.timestamp() + 60
+
+
+def parse_response(raw: str, backend: str) -> dict:
+    """잘못된 JSON 답도 백엔드 실패로 다뤄 보고서 생성을 계속한다."""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        start, end = raw.find("{"), raw.rfind("}")
+        try:
+            data = json.loads(raw[start:end + 1]) if start >= 0 and end > start else None
+        except json.JSONDecodeError:
+            data = None
+    if not isinstance(data, dict):
+        raise LLMError(f"{backend} 답이 JSON 객체가 아니에요: {raw[:120]}")
+    return data
 
 
 CODEX_CANDIDATES = [
@@ -81,16 +130,13 @@ def run_codex(prompt: str, schema: dict, images: list[Path] = (), effort: str = 
         except subprocess.TimeoutExpired:
             raise LLMError(f"Codex 응답이 {timeout}초를 넘었어요")
         if proc.returncode != 0 or not op.exists():
-            tail = (proc.stderr or proc.stdout or "")[-600:]
-            raise LLMError(f"Codex 실패 (코드 {proc.returncode}): {tail}")
+            out = (proc.stderr or "") + (proc.stdout or "")
+            if "usage limit" in out.lower() or "rate limit" in out.lower():
+                line = next((ln for ln in out.splitlines() if "limit" in ln.lower()), "사용 한도 초과")
+                raise LLMQuotaError(f"Codex 사용 한도: {line.strip()[:200]}", parse_retry_at(out))
+            raise LLMError(f"Codex 실패 (코드 {proc.returncode}): {out[-600:]}")
         raw = op.read_text("utf-8").strip()
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            start, end = raw.find("{"), raw.rfind("}")
-            if start < 0:
-                raise LLMError(f"Codex 답이 JSON 이 아니에요: {raw[:200]}")
-            data = json.loads(raw[start:end + 1])
+        data = parse_response(raw, "Codex")
         data["_llm"] = {"backend": "codex", "sec": round(time.time() - t0, 1), "effort": effort}
         return data
 
@@ -106,33 +152,88 @@ def run_ollama(prompt: str, schema: dict, images: list[Path] = (), model: str = 
             "model": model, "messages": [msg], "format": strict_schema(schema), "stream": False,
             "options": {"temperature": 0.2}, "think": False})
         r.raise_for_status()
-        data = json.loads(r.json()["message"]["content"])
+        data = parse_response(r.json()["message"]["content"], "ollama")
     except (requests.RequestException, KeyError, json.JSONDecodeError) as e:
         raise LLMError(f"ollama 실패: {e}")
     data["_llm"] = {"backend": "ollama", "model": model, "sec": round(time.time() - t0, 1)}
     return data
 
 
+def _cooldown(backend: str) -> float:
+    try:
+        from . import store
+        c = store.kv_get(f"llm_cooldown_{backend}") or {}
+        return float(c.get("until", 0))
+    except Exception:
+        return 0.0
+
+
+def _set_cooldown(backend: str, until: float, msg: str) -> None:
+    try:
+        from . import store
+        store.kv_set(f"llm_cooldown_{backend}", {"until": until, "msg": msg})
+        store.log_event("llm", f"{backend} 잠시 쉼 ({datetime.fromtimestamp(until):%H:%M}까지, 맥 시각): {msg[:120]}")
+    except Exception:
+        pass
+
+
+def chain(settings: dict | None) -> list[str]:
+    """이번에 시도할 AI 순서: 기본 → 대체(ollama). 한도로 쉬는 중인 건 뺀다."""
+    s = (settings or {}).get("llm", {})
+    if s.get("backend") == "fake":
+        return []
+    order = [s.get("backend", "codex")]
+    fb = s.get("fallback", "ollama")
+    if fb and fb not in order and fb != "none":
+        order.append(fb)
+    return [b for b in order if b != "fake" and _cooldown(b) <= time.time()]
+
+
+def available(settings: dict | None) -> bool:
+    return bool(chain(settings))
+
+
 def run_json(prompt: str, schema: dict, images: list[Path] = (), settings: dict | None = None,
              effort: str | None = None, retries: int = 1) -> dict:
     s = (settings or {}).get("llm", {})
-    backend = s.get("backend", "codex")
+    order = chain(settings)
+    if not order:
+        raise LLMError("쓸 수 있는 AI 가 없어요 (사용 한도로 쉬는 중)")
     last: Exception | None = None
-    for attempt in range(retries + 1):
-        try:
-            if backend == "codex":
-                return run_codex(prompt, json.loads(json.dumps(schema)), list(images),
-                                 effort=effort or s.get("effort", "low"),
-                                 timeout=int(s.get("timeout", 300)), model=s.get("model"))
-            if backend == "ollama":
-                return run_ollama(prompt, json.loads(json.dumps(schema)), list(images),
-                                  model=s.get("ollama_model", "qwen3.6:27b"), timeout=int(s.get("timeout", 300)))
-            raise LLMError(f"알 수 없는 AI 백엔드: {backend}")
-        except LLMError as e:
-            last = e
-            if attempt < retries:
+    for backend in order:
+        for attempt in range(retries + 1):
+            try:
+                if backend == "codex":
+                    return run_codex(prompt, json.loads(json.dumps(schema)), list(images),
+                                     effort=effort or s.get("effort", "low"),
+                                     timeout=int(s.get("timeout", 300)), model=s.get("model"))
+                if backend == "ollama":
+                    return run_ollama(prompt, json.loads(json.dumps(schema)), list(images),
+                                      model=s.get("ollama_model", "qwen3.6:27b"),
+                                      timeout=int(s.get("ollama_timeout", 1200)))
+                raise LLMError(f"알 수 없는 AI 백엔드: {backend}")
+            except LLMQuotaError as e:
+                _set_cooldown(backend, e.retry_at, str(e))
+                last = e
+                break                      # 같은 백엔드 재시도 없이 다음(대체)으로
+            except LLMError as e:
+                last = e
+                if backend != "codex" or attempt >= retries:
+                    # 꺼진 로컬 모델을 묶음마다 다시 부르거나, 다음 정리에서
+                    # 곧바로 같은 규칙 기반 보고서를 재생성하지 않는다.
+                    _set_cooldown(backend, time.time() + max(30, int(s.get("failure_cooldown_sec", 300))), str(e))
+                    break
                 time.sleep(8)
     raise last or LLMError("AI 호출 실패")
+
+
+def batch_size(settings: dict) -> int:
+    """지금 쓸 AI 에 맞는 묶음 크기 (로컬 모델은 느려서 작게)."""
+    s = settings.get("llm", {})
+    order = chain(settings)
+    if order and order[0] == "ollama":
+        return int(s.get("ollama_batch", 3))
+    return int(s.get("batch", 5))
 
 
 def check(settings: dict) -> dict:

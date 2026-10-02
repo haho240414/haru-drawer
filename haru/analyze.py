@@ -14,6 +14,7 @@ from pathlib import Path
 from . import config, store
 from .enrich import summarize_meta_for_prompt
 from .ingest import bytes_to_jpeg
+from . import llm
 from .llm import LLMError, run_json
 from .timeutil import day_label, iso, now, parse_iso, shift_day
 
@@ -72,7 +73,7 @@ ITEM_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자는 카�
 규칙:
 - 링크 본문을 못 읽었으면(오류·로그인 벽·차단) 메시지 글과 미리보기만으로 판단하고 summary 끝에 "(본문 확인 불가)"를 붙인다. 없는 내용을 지어내지 않는다.
 - 캡처 이미지는 화면 속 글자를 읽어 무엇인지 파악한다 (상품·매물·기사·대화·일정·코드·결제 등). 이미지 번호와 항목 번호의 짝을 지킨다.
-- 사용자가 직접 쓴 메모는 메모 내용을 정리한다 (할 일이면 intent '할 일').
+- 사용자가 직접 쓴 메모는 메모 내용을 정리한다 (할 일이면 intent '할 일'). 장소·담당자·기관 이름을 줄이거나 바꾸지 않는다. '관리사무소'를 '관사'처럼 다른 단어로 바꾸지 않는다.
 - 원본이 없는 사진·동영상 자리표시("사진", "동영상")는 '내용 확인 불가'로 짧게 처리하고 importance 1.
 - 문장은 간결한 한국어 평서문·명사형. 존댓말·감탄·이모지 금지.
 
@@ -234,18 +235,21 @@ def analyze_items(items: list[dict], settings: dict, log=print) -> dict:
             continue
         if it.get("url_key"):
             prev = store.find_analyzed_by_url(it["url_key"], it["id"])
-            if prev and prev.get("analysis"):
+            if prev and prev.get("analysis") and (prev["analysis"].get("source") != "heuristic" or not llm.available(settings)):
                 a = dict(prev["analysis"], reused_from=prev["id"])
                 store.update_item(it["id"], analysis=a, status="analyzed")
                 stats["reused"] += 1
                 continue
         todo.append(it)
-    backend = settings["llm"].get("backend", "codex")
-    batch = max(1, int(settings["llm"].get("batch", 5)))
-    for i in range(0, len(todo), batch):
+    use_ai = settings["llm"].get("backend") != "fake"
+    i = 0
+    while i < len(todo):
+        # 묶음 크기는 지금 쓸 AI 에 맞춘다 (Codex 5개 / 한도 때문에 로컬 모델로 바뀌면 3개)
+        batch = max(1, llm.batch_size(settings)) if use_ai else 10
         chunk = todo[i:i + batch]
+        i += len(chunk)
         result: dict[str, dict] = {}
-        if backend != "fake":
+        if use_ai and llm.available(settings):
             try:
                 result = analyze_batch(chunk, settings)
                 stats["ai"] += len(result)
@@ -258,7 +262,7 @@ def analyze_items(items: list[dict], settings: dict, log=print) -> dict:
                 a = heuristic_item(it, cats)
                 stats["heuristic"] += 1
             store.update_item(it["id"], analysis=a, status="analyzed")
-        log(f"  분석 {min(i + batch, len(todo))}/{len(todo)}")
+        log(f"  분석 {i}/{len(todo)}")
     return dict(stats)
 
 
@@ -324,13 +328,15 @@ def heuristic_digest(day: str, views: list[dict]) -> dict:
     todos = [{"text": a, "ref": v["id"], "when": "이번 주"} for v in top for a in v["actions"]][:6]
     return {
         "headline": (" · ".join(main) + " 위주로 모은 날") if main else "조용한 하루",
-        "summary": f"{len(views)}개를 모았다. " + ", ".join(f"{c} {n}개" for c, n in cats.most_common(4)) + ".",
+        "summary": (f"{len(views)}개를 모았다. " + ", ".join(f"{c} {n}개" for c, n in cats.most_common(4)) + ".")
+                   if views else "보고서에 남은 항목이 없다.",
         "highlights": [{"ref": v["id"], "why": v["summary"][:35] or v["title"]} for v in top[:3]],
         "themes": [{"name": c, "refs": [v["id"] for v in views if v["category"] == c],
                     "insight": f"{n}개 모음"} for c, n in cats.most_common(5)],
         "todos": todos,
         "read_later": [v["id"] for v in views if v["intent"] == "나중에 읽기"][:6],
-        "lock": {"title": f"오늘 {len(views)}개 모음", "lines": [v["lock_line"] or shorten(v["title"], 20) for v in top[:3]]},
+        "lock": {"title": f"오늘 {len(views)}개 모음" if views else "모은 항목 없음",
+                 "lines": [v["lock_line"] or shorten(v["title"], 20) for v in top[:3]]},
         "tomorrow": shorten(top[0]["title"], 40) if top else "",
         "_llm": {"backend": "heuristic"},
     }
@@ -338,17 +344,17 @@ def heuristic_digest(day: str, views: list[dict]) -> dict:
 
 def build_digest(day: str, settings: dict, force: bool = False, log=print) -> dict | None:
     items = [i for i in store.items_for_day(day) if i["status"] == "analyzed"]
-    if not items:
+    cur = store.get_digest(day)
+    if not items and not cur:
         return None
     sig = item_sig(items)
-    cur = store.get_digest(day)
     if cur and cur.get("item_sig") == sig and not force:
         return cur["data"]
     views = [_item_view(i) for i in items]
     ref_of = {v["id"]: f"B{n}" for n, v in enumerate(views, 1)}
     id_of = {r: i for i, r in ref_of.items()}
     data: dict | None = None
-    if settings["llm"].get("backend") != "fake":
+    if items and settings["llm"].get("backend") != "fake" and llm.available(settings):
         lines = []
         for v in views:
             lines.append(json.dumps({"ref": ref_of[v["id"]], "시각": v["time"], "종류": KIND_KO.get(v["kind"]),

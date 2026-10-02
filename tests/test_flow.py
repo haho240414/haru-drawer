@@ -160,3 +160,27 @@ def test_hello_with_shares_publishes_latest_once(paired):
     daemon.loop_once(config.load_settings())
     digests = [m.obj["day"] for m in phone.poll(phone.down) if m.obj["t"] == "digest"]
     assert digests == ["2026-10-03"]
+
+
+def test_hiding_last_item_clears_report_and_phone_card(paired):
+    from haru import pipeline
+    from haru.ingest import import_share
+    from haru.server import app
+    s, phone = paired
+    import_share({"id": "only", "ts": "2026-10-03T10:00:00+09:00", "kind": "text",
+                  "text": "관리사무소 전화하기"}, None, 4)
+    pipeline.run(publish=True)
+    initial = store.get_digest("2026-10-03")
+    response = app.test_client().post("/api/item/s:only/hide")
+    assert response.status_code == 200
+    result = pipeline.run(days=["2026-10-03"], publish=True)
+    digest = store.get_digest("2026-10-03")
+    assert digest["version"] > initial["version"]
+    assert digest["data"]["items"] == []
+    assert digest["data"]["todos"] == []
+    assert digest["data"]["lock"]["lines"] == []
+    assert result["published"] == ["2026-10-03"]
+    messages = [m for m in phone.poll(phone.down) if m.obj["t"] == "digest"]
+    bundle = json.loads(phone.fetch_attachment(messages[-1], phone.down))
+    assert bundle["digest"]["stats"]["count"] == 0
+    assert bundle["digest"]["items"] == []

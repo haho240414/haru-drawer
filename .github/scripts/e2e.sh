@@ -88,6 +88,7 @@ A exec-out screencap -p > "$OUT/2_app_report.png"
 # 재연결 확인: 화면을 다시 띄워도 연결 딥링크를 또 처리하지 않아야 한다
 RELINK="$(A logcat -d -s HaruLinks:I | grep -c '연결:' || true)"
 echo "연결 처리 횟수: $RELINK"
+check "연결 딥링크는 한 번만 처리 (배경 바꿀 때 화면이 다시 만들어져도)" '[ "$RELINK" = "1" ]'
 # PIN 을 걸어 잠금화면이 반드시 뜨게 → 끄고 켜서 찍기
 A shell locksettings set-pin 1234 || true
 A shell input keyevent 223

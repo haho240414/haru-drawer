@@ -39,7 +39,11 @@ DEFAULTS: dict = {
         "model": None,
         "batch": 5,               # 한 번에 분석할 항목 수
         "timeout": 300,
+        # Codex 사용 한도가 차면 이 맥의 로컬 모델로 대신 (qwen3.6:27b: 캡처 읽기 가능, 항목당 1분 안팎)
+        "fallback": "ollama",
         "ollama_model": "qwen3.6:27b",
+        "ollama_batch": 3,
+        "ollama_timeout": 1200,
     },
     "relay": {
         "server": "https://ntfy.sh",

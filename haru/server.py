@@ -200,10 +200,11 @@ def api_settings_save():
 def api_card(day, style):
     if style not in ("A", "B"):
         abort(404)
-    p = config.CARDS / f"{day}_{style}.png"
     dg = store.get_digest(day)
     if not dg:
         abort(404)
+    # 같은 날도 보고서가 바뀌면 새 카드를 그린다 (항목 제외·AI 재분석).
+    p = config.CARDS / f"{day}_v{dg['version']}_{style}.png"
     if not p.exists() or request.args.get("fresh"):
         s = _settings()
         dev = s.get("device") or {}

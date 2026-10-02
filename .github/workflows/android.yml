@@ -2,7 +2,7 @@ name: 하루서랍 (맥 엔진 테스트 · 안드로이드 APK · 에뮬레이�
 
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: [main, 'claude/**', 'codex/**']
   workflow_dispatch:
 
 permissions:
