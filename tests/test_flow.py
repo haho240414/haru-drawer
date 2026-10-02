@@ -144,3 +144,19 @@ def test_inbox_scan_moves_files(home):
     assert "2026-10-01" in days
     assert sorted(p.name for p in (config.INBOX / "처리됨").iterdir()) == ["KakaoTalkChats.txt", "mac.zip", "shot.png"]
     assert not [p for p in config.INBOX.iterdir() if p.is_file()]
+
+
+def test_hello_with_shares_publishes_latest_once(paired):
+    """폰 인사와 공유가 한 바퀴에 같이 오면, 정리한 최신 날 하나만 한 번 보낸다 (예전 날 중복 X)."""
+    from haru import daemon, pipeline
+    from haru.inbox import import_any
+    s, phone = paired
+    import_any(FIX / "android_self.txt", s)            # 예전 날(9/30·10/1) 기록이 이미 있음
+    pipeline.enrich_link = lambda url: {"title": "t", "site_kind": "web", "site": "웹"}
+    pipeline.run(publish=False)
+    phone.send_up({"t": "hello", "dev": {"w": 1080, "h": 2340}, "tz": "Asia/Seoul"})
+    phone.send_up({"t": "item", "id": "n1", "ts": "2026-10-03T10:00:00+09:00", "kind": "text", "text": "새 메모 하기"})
+    store.kv_set("run_request", {"force": False})      # 이번 바퀴에 정리하게
+    daemon.loop_once(config.load_settings())
+    digests = [m.obj["day"] for m in phone.poll(phone.down) if m.obj["t"] == "digest"]
+    assert digests == ["2026-10-03"]

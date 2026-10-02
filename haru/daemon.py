@@ -19,6 +19,7 @@ from .relay import Relay
 from .timeutil import iso, now, parse_iso
 
 LOOP_SEC = 30
+LATEST = "__latest__"
 HEARTBEAT_SEC = 3600
 SHARE_QUIET_SEC = 180      # 폰 공유가 이만큼 잠잠해지면 정리
 log = logging.getLogger("haru")
@@ -103,7 +104,7 @@ def handle_phone(rel: Relay, settings: dict) -> dict:
                 store.kv_set("phone", {"seen": iso(now()), "dev": dev, "app": obj.get("app"), "tz": obj.get("tz")})
                 store.log_event("phone", f"폰 연결: {dev.get('model', '')} {dev.get('w')}×{dev.get('h')}")
                 log.info("폰 인사: %s", dev)
-                out["resend"].append(latest_day(settings))
+                out["resend"].append(LATEST)   # 이번 바퀴 끝에 '그때의' 최신 날을 보낸다 (뒤따라온 공유까지 반영)
                 send_heartbeat(rel, settings)
             elif t == "item":
                 data = None
@@ -127,7 +128,7 @@ def handle_phone(rel: Relay, settings: dict) -> dict:
             elif t == "refresh":
                 out["refresh"] = True
             elif t == "resend":
-                out["resend"].append(obj.get("day") or latest_day(settings))
+                out["resend"].append(obj.get("day") or LATEST)
             elif t == "todo":
                 store.set_todo_done(obj.get("key", ""), bool(obj.get("done")))
             store.kv_set("phone_last", iso(now()))
@@ -180,9 +181,11 @@ def loop_once(settings: dict) -> None:
     min_gap = int(settings.get("min_run_gap_min", 20)) * 60
     if pending and time.time() - last_share > SHARE_QUIET_SEC and time.time() - last_run_ts > min_gap:
         want_run = True
+    published_now: set[str] = set()
     if want_run:
         try:
             res = run(publish=True, force_digest=bool(req and req.get("force")), log=log.info)
+            published_now = set(res.get("published") or [])
             log.info("정리 완료: %s", {k: res[k] for k in ("built", "published", "sec")})
             store.kv_set("last_run_ts", time.time())
             if due:
@@ -196,7 +199,8 @@ def loop_once(settings: dict) -> None:
             if due:
                 store.kv_set("last_sched", iso(due))   # 같은 시각으로 무한 재시도하지 않게
             store.kv_set("run_request", None)
-    for day in set(resend):
+    days = {latest_day(settings) if d == LATEST else d for d in resend} - published_now - {None}
+    for day in days:
         try:
             publish_day(day, settings, log.info, force=True)
         except Exception as e:
