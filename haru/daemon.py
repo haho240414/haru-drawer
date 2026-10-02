@@ -29,11 +29,17 @@ def setup_logging() -> None:
     config.ensure_dirs()
     log.setLevel(logging.INFO)
     if not log.handlers:
+        # 로그 시각도 하루서랍 시간대로 (이 맥의 시스템 시간대는 LA 라서)
+        def conv(*_):
+            return now().timetuple()
+        fmt_file = logging.Formatter("%(asctime)s %(message)s", "%m-%d %H:%M:%S")
+        fmt_out = logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S")
+        fmt_file.converter = fmt_out.converter = conv
         fh = RotatingFileHandler(config.LOGS / "daemon.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8")
-        fh.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%m-%d %H:%M:%S"))
+        fh.setFormatter(fmt_file)
         log.addHandler(fh)
         sh = logging.StreamHandler(sys.stdout)
-        sh.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
+        sh.setFormatter(fmt_out)
         log.addHandler(sh)
 
 

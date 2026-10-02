@@ -54,7 +54,7 @@ class Relay(server: String, val up: String, val down: String, private val key: S
             attachment = obj.toString().toByteArray(Charsets.UTF_8)
             obj = JSONObject().put("t", obj.optString("t")).put("big", true)
         }
-        val env = Envelope.seal(key, topic, attachment)
+        val env = Envelope.seal(key, topic, attachment!!)
         val head = Envelope.sealText(key, topic, obj)
         val c = open("$server/$topic", "PUT", 120_000)
         c.doOutput = true

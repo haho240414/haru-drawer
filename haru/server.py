@@ -15,6 +15,7 @@ from .pipeline import Busy, latest_day, publish_day, run
 from .relay import new_pairing, pairing_code
 from .timeutil import today
 
+APK_URL = "https://github.com/haho240414/haru-drawer/releases/latest/download/haru-drawer.apk"
 app = Flask(__name__, static_folder=None)
 _run_thread: threading.Thread | None = None
 _run_log: list[str] = []
@@ -28,6 +29,9 @@ def _settings() -> dict:
 def _no_cache(resp):
     if request.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-store"
+    elif not request.path.startswith(("/media/", "/fonts/")):
+        # 화면 코드(js·css)는 업데이트 후 바로 반영되게 매번 확인 (안 바뀌었으면 304)
+        resp.headers["Cache-Control"] = "no-cache"
     return resp
 
 
@@ -148,8 +152,11 @@ def api_pairing():
     img = qrcode.make("haru://pair/" + code, box_size=8, border=2)
     buf = io.BytesIO()
     img.save(buf, "PNG")
+    apk = io.BytesIO()
+    qrcode.make(APK_URL, box_size=6, border=2).save(apk, "PNG")
     return jsonify({"code": code, "qr": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode(),
-                    "server": s["relay"]["server"], "phone": store.kv_get("phone")})
+                    "server": s["relay"]["server"], "phone": store.kv_get("phone"),
+                    "apk_url": APK_URL, "apk_qr": "data:image/png;base64," + base64.b64encode(apk.getvalue()).decode()})
 
 
 @app.post("/api/pairing/reset")

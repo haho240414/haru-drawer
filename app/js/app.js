@@ -203,6 +203,11 @@ async function showLink() {
       <div class="code" style="margin-top:12px">${esc(j.code)}</div>
       <div class="row2" style="margin-top:10px"><button class="btn small" id="copy">코드 복사</button>
         <button class="btn small" id="reset">새 코드 만들기 (기존 폰 연결 끊김)</button></div></div>
+    <div class="card"><h2>폰 앱 설치</h2><div class="lockprev">
+      <img src="${j.apk_qr}" alt="앱 받기 QR" style="width:150px;height:150px;border-radius:12px;background:#fff;padding:5px">
+      <div class="side"><ol class="steps"><li>폰 카메라로 이 QR 을 찍어 <b>haru-drawer.apk</b> 받기</li>
+        <li>설치할 때 '출처를 알 수 없는 앱' 허용</li><li>앱을 열고 위의 연결 QR 찍기</li></ol>
+        <a class="meta" href="${esc(j.apk_url)}" target="_blank">${esc(j.apk_url)}</a></div></div></div>
     <div class="card"><h2>연결 상태</h2>${ph ? `<div><span class="ok">● 연결됨</span> ${esc(ph.dev?.model || "")} · ${ph.dev?.w}×${ph.dev?.h} · 마지막 ${esc((ph.seen || "").slice(0, 16).replace("T", " "))}</div>`
       : `<div class="muted">아직 폰이 인사하지 않았어요</div>`}
       <p class="meta">중계: ${esc(j.server)} (내용은 맥·폰만 아는 키로 암호화돼서 중계 서버는 못 읽어요)</p></div>`;
