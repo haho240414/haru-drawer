@@ -359,9 +359,24 @@ async function route() {
   return showDay(null);
 }
 window.addEventListener("hashchange", route);
+
+// 폰 앱 첫 실행: 맥과 연결 전이면 '맥 연결' 화면부터, 알림 권한은 한 번만 묻는다
+async function firstRun() {
+  if (!isNative) return;
+  try {
+    const st = await Source.status();
+    if (!st.paired && !location.hash) location.hash = "#/link";
+    if (!st.notifications && pref.get("askedNotif", "") !== "1") {
+      pref.set("askedNotif", "1");
+      await Source.requestNotifications();
+    }
+  } catch { /* 네이티브 준비 전이면 다음에 */ }
+}
+
 if (isNative) {
   // 새 정리가 도착하면 (네이티브가 알려 줌) 화면 갱신
   Source.addListener("digest", () => { if (!location.hash || location.hash === "#/" || location.hash.startsWith("#/day")) route(); });
   Source.addListener("shared", () => { if (location.hash === "#/add") route(); });
+  Source.addListener("paired", () => { toast("맥과 연결했어요"); route(); });
 }
-route();
+firstRun().finally(route);
