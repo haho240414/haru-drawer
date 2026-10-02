@@ -184,3 +184,19 @@ def test_hiding_last_item_clears_report_and_phone_card(paired):
     bundle = json.loads(phone.fetch_attachment(messages[-1], phone.down))
     assert bundle["digest"]["stats"]["count"] == 0
     assert bundle["digest"]["items"] == []
+
+
+def test_lockcards_render_concurrently(home):
+    from concurrent.futures import ThreadPoolExecutor
+    from haru.lockcard import render
+    from PIL import Image
+    card = {"day": "2026-10-02", "label": "10월 2일 (금)", "count": 1, "title": "관리사무소 전화",
+            "lines": ["토요일 오전 10시 임장"], "todos": 1, "readLater": 0, "cats": [], "updated": "18:00"}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(render, card, style, config.CARDS / f"parallel_{style}.png", 360, 780, 1.0)
+                for style in ("A", "B")]
+        paths = [j.result() for j in jobs]
+    for path in paths:
+        with Image.open(path) as image:
+            assert image.size == (360, 780) and image.mode == "RGBA"
+    assert paths[0].read_bytes() != paths[1].read_bytes()

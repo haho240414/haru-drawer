@@ -13,6 +13,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -89,10 +90,10 @@ def render(card: dict, style: str, out: Path, width: int = 1080, height: int = 2
     data = base64.urlsafe_b64encode(json.dumps(card, ensure_ascii=False).encode()).decode().rstrip("=")
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp_profile = config.DATA / "chrome-profile"
-    if out.exists():
-        out.unlink()
-    with StaticServer(config.WEB_DIR) as srv:
+    # 동시에 A/B 미리보기를 열어도 프로필 잠금이나 미완성 PNG가 충돌하지 않게 한다.
+    with tempfile.TemporaryDirectory(prefix="haru-card-", dir=out.parent) as td, StaticServer(config.WEB_DIR) as srv:
+        tmp_profile = Path(td) / "profile"
+        shot = Path(td) / "card.png"
         url = f"http://127.0.0.1:{srv.port}/lockcard.html?style={style}&w={css_w}&h={css_h}#data={data}"
         cmd = [chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
                "--no-default-browser-check", f"--user-data-dir={tmp_profile}",
@@ -101,7 +102,7 @@ def render(card: dict, style: str, out: Path, width: int = 1080, height: int = 2
                "--disable-component-update", "--disable-sync", "--no-pings", "--mute-audio",
                "--default-background-color=00000000", f"--force-device-scale-factor={density}",
                f"--window-size={css_w},{css_h}", "--virtual-time-budget=2500",
-               f"--screenshot={out}", url]
+               f"--screenshot={shot}", url]
         if sys.platform.startswith("linux"):
             # CI(우분투)는 사용자 네임스페이스 제한으로 크롬 샌드박스가 안 뜰 수 있다 — 우리 로컬 페이지만 여니 꺼도 됨
             cmd.insert(1, "--no-sandbox")
@@ -110,10 +111,10 @@ def render(card: dict, style: str, out: Path, width: int = 1080, height: int = 2
         deadline, last_size, stable = time.time() + timeout, -1, 0
         try:
             while time.time() < deadline:
-                if proc.poll() is not None and not out.exists():
+                if proc.poll() is not None and not shot.exists():
                     break
-                if out.exists():
-                    size = out.stat().st_size
+                if shot.exists():
+                    size = shot.stat().st_size
                     stable = stable + 1 if size == last_size and size > 0 else 0
                     last_size = size
                     if stable >= 3:
@@ -129,15 +130,16 @@ def render(card: dict, style: str, out: Path, width: int = 1080, height: int = 2
                         os.killpg(proc.pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
-    if not out.exists():
-        err = proc.stderr.read().decode("utf-8", "replace")[-300:] if proc.stderr else ""
-        raise RuntimeError(f"카드 그리기 실패: {err}")
-    # 크롬이 창 크기를 살짝 다르게 잡는 경우 정확히 폰 해상도로 맞춘다
-    from PIL import Image
-    with Image.open(out) as im:
-        if im.size != (width, height):
-            im = im.convert("RGBA").resize((width, height))
-            im.save(out)
+        if not shot.exists():
+            err = proc.stderr.read().decode("utf-8", "replace")[-300:] if proc.stderr else ""
+            raise RuntimeError(f"카드 그리기 실패: {err}")
+        # 크롬이 창 크기를 살짝 다르게 잡는 경우 정확히 폰 해상도로 맞춘다
+        from PIL import Image
+        with Image.open(shot) as im:
+            if im.size != (width, height):
+                im = im.convert("RGBA").resize((width, height))
+                im.save(shot)
+        shot.replace(out)
     return out
 
 
