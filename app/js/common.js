@@ -26,7 +26,12 @@ export function esc(s) {
 }
 
 export const KIND_LABEL = { link: "링크", image: "캡처", text: "메모", video: "동영상", file: "파일", audio: "음성" };
-export const KIND_ICON = { link: "🔗", image: "🖼️", text: "📝", video: "🎬", file: "📎", audio: "🎙️" };
+export const KIND_ICON = { link: "link", image: "image", text: "file-text", video: "square-play", file: "file", audio: "mic" };
+
+// Official Lucide geometry is bundled locally, including its license.
+export function icon(name, cls = "") {
+  return `<svg class="icon ${esc(cls)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="vendor/lucide.svg#${esc(name)}"></use></svg>`;
+}
 
 export function fmtDuration(sec) {
   if (!sec) return "";

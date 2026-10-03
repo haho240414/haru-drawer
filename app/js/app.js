@@ -2,21 +2,27 @@
 import { Source, isNative } from "./source.js";
 import { showYoutube } from "./youtube.js";
 import { renderReport, cssId } from "./report.js";
-import { esc } from "./common.js";
+import { esc, icon } from "./common.js";
 
 const $view = document.getElementById("view");
 const $tabs = document.getElementById("tabs");
+const $desktopTabs = document.getElementById("desktopTabs");
 const $run = document.getElementById("runBtn");
 const state = { days: [], today: null };
+document.querySelector(".skip-link").onclick = (event) => {
+  event.preventDefault();
+  $view.focus();
+  $view.scrollIntoView({ block: "start" });
+};
 
 const pref = {
   get(k, d) { try { return localStorage.getItem("haru." + k) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("haru." + k, v); } catch { /* 저장 못 해도 화면은 동작 */ } },
 };
 
-const TABS = isNative
-  ? [["#/", "📋", "오늘"], ["#/days", "🗓️", "기록"], ["#/add", "📤", "보낼 것"], ["#/link", "💻", "맥 연결"], ["#/settings", "⚙️", "설정"]]
-  : [["#/", "📋", "오늘"], ["#/days", "🗓️", "기록"], ["#/add", "📥", "넣기"], ["#/link", "📱", "폰 연결"], ["#/settings", "⚙️", "설정"]];
+const TABS = [["#/", "calendar-days", "보고서", "오늘 보고서"], ["#/days", "file-text", "기록", "기록"],
+  ["#/add", "circle-plus", "자료", isNative ? "보낼 자료" : "자료 추가"],
+  ["#/link", isNative ? "monitor" : "smartphone", "연결", isNative ? "맥 연결" : "폰 연결"], ["#/settings", "settings", "설정", "설정"]];
 
 function toast(msg, ms = 2600) {
   const t = Object.assign(document.createElement("div"), { className: "toast", textContent: msg });
@@ -25,10 +31,14 @@ function toast(msg, ms = 2600) {
 }
 
 function drawTabs(route) {
-  $tabs.innerHTML = TABS.map(([href, ic, label]) => {
-    const on = href === "#/" ? (route === "" || route.startsWith("day")) : route.startsWith(href.slice(2));
-    return `<a href="${href}" class="${on ? "on" : ""}"><span class="ic">${ic}</span>${label}</a>`;
+  const draw = (tabs, mobile) => tabs.map(([href, ic, short, full]) => {
+    const on = href === "#/" ? (route === "" || route.startsWith("day/")) : route.startsWith(href.slice(2)) || (mobile && href === "#/settings" && route === "youtube");
+    return `<a href="${href}" class="${on ? "on" : ""}" ${on ? 'aria-current="page"' : ""}><span class="ic">${icon(ic)}</span>${mobile ? short : full}</a>`;
   }).join("");
+  $tabs.innerHTML = draw(TABS, true);
+  const desktop = [...TABS];
+  if (!isNative) desktop.splice(3, 0, ["#/youtube", "square-play", "유튜브", "유튜브"]);
+  $desktopTabs.innerHTML = draw(desktop, false);
 }
 
 async function loadDays() {
@@ -46,18 +56,18 @@ async function showDay(day) {
   await loadDays();
   if (!day) day = state.days[0]?.day || state.today;
   if (!day) {
-    $view.innerHTML = `<div class="card empty">아직 모은 게 없어요.<br><br>${isNative
-      ? "아무 앱에서 <b>공유 → 하루서랍</b> 을 누르거나, 카톡 '나와의 채팅'을 내보내 이 앱으로 공유하세요."
-      : "카톡 '나와의 채팅'을 내보내 <a href='#/add'>넣기</a> 에 끌어다 놓으세요."}</div>`;
+    $view.innerHTML = `<section class="empty"><h1>첫 보고서를 기다리고 있어요</h1><p>${isNative
+      ? "링크나 캡처를 공유 → 하루서랍으로 보내면 맥에서 정리한 보고서가 여기에 도착합니다."
+      : "링크나 캡처, 카톡 ‘나와의 채팅’ 내보내기 파일을 추가해 보세요. 모은 자료를 하루 단위로 정리합니다."}</p><a class="btn" href="#/add">자료 추가</a></section>`;
     return;
   }
   const idx = state.days.findIndex((d) => d.day === day);
   const prev = state.days[idx + 1]?.day;
   const next = idx > 0 ? state.days[idx - 1]?.day : null;
   $view.innerHTML = `<div class="daynav">
-      <button class="arrow" ${prev ? `data-day="${prev}"` : "disabled"} aria-label="이전 날">‹</button>
+      <button class="arrow" ${prev ? `data-day="${prev}"` : "disabled"} aria-label="이전 날">${icon("chevron-left")}</button>
       <span class="label" id="dayLabel">${esc(day)}</span>
-      <button class="arrow" ${next ? `data-day="${next}"` : "disabled"} aria-label="다음 날">›</button>
+      <button class="arrow" ${next ? `data-day="${next}"` : "disabled"} aria-label="다음 날">${icon("chevron-right")}</button>
     </div><div class="meta" id="dayMeta"></div><div id="report"><div class="card empty">불러오는 중…</div></div>`;
   let data;
   try {
@@ -69,7 +79,7 @@ async function showDay(day) {
   const d = data.digest;
   document.getElementById("dayLabel").textContent = d?.label || day;
   document.getElementById("dayMeta").textContent = d
-    ? `${d.stats?.count || 0}개 모음 · ${(d.generated_at || "").slice(11, 16)} 정리${data.pending ? ` · 새로 ${data.pending}개 대기` : ""}`
+    ? `자료 ${d.stats?.count || 0}개 · ${(d.generated_at || "").slice(11, 16)} 정리${data.pending ? ` · 새로 ${data.pending}개 대기` : ""}`
     : "";
   let style = pref.get("style", "A");
   if (isNative) {
@@ -77,35 +87,40 @@ async function showDay(day) {
   }
   const ctx = {
     style,
+    isNative,
     canHide: !isNative,
     thumbUrl: (it) => Source.thumbUrl(it),
     fullUrl: (it) => Source.fullUrl(it),
-    lockNote: isNative ? "설정에서 잠금화면 배경으로 쓰기·알림을 켜고 끌 수 있어요." : "폰과 연결하면 이 카드가 폰 잠금화면에 자동으로 들어가요 (배경은 폰에서 고름).",
+    lockNote: isNative ? "잠금화면 배경과 알림은 설정에서 켤 수 있어요." : '폰 연결 후 사용할 수 있어요. 배경과 알림은 폰에서 설정합니다.',
     lockActions: isNative
-      ? `<button class="btn small" data-act="apply">지금 잠금화면에 적용</button>`
-      : `<div class="row2"><a class="btn small" href="${data.cards?.[style] || "#"}" target="_blank">PNG 크게 보기</a>
-         <button class="btn small" data-act="publish">폰으로 다시 보내기</button></div>`,
+      ? `<button class="btn block" data-act="apply">${icon("smartphone")} 잠금화면에 적용</button>`
+      : `<button class="btn block" data-act="publish">${icon("smartphone")} 폰으로 보내기</button>`,
   };
   const rep = document.getElementById("report");
   renderReport(rep, data, ctx);
   if (d && !isNative) {
-    rep.insertAdjacentHTML("beforebegin", `<div class="card"><h2>노트북에 보관한 파일</h2>
-      <p class="meta">같은 보고서를 날짜별 파일로 저장해요. 할 일·링크 목록·분류한 원본도 함께 보관합니다.</p>
-      <div class="row2"><button class="btn small" id="saveFiles">파일 ${data.archive?.exists ? "갱신" : "만들기"}</button>
-      ${data.archive?.exists ? `<a class="btn small" href="${esc(data.archive.url)}" target="_blank" rel="noopener">보고서 보기</a>` : ""}</div>
-      <p class="meta" style="overflow-wrap:anywhere">${esc(data.archive?.path || "")}</p></div>`);
     document.getElementById("saveFiles").onclick = async (ev) => {
-      ev.target.disabled = true;
+      const button = ev.currentTarget;
+      button.disabled = true;
       try {
         await Source.exportDay(day);
         toast("노트북에 파일로 저장했어요");
         await showDay(day);
-      } catch (e) { toast("파일 저장 실패: " + e.message); ev.target.disabled = false; }
+      } catch (e) { toast("파일 저장 실패: " + e.message); button.disabled = false; }
     };
   }
+  const filterItems = (category) => {
+    rep.querySelectorAll("[data-filter]").forEach(b => {
+      const on = b.dataset.filter === category;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    rep.querySelectorAll(".item").forEach(item => { item.hidden = !!category && item.dataset.category !== category; });
+  };
   rep.onclick = async (ev) => {
-    const t = ev.target.closest("[data-goto],[data-open],[data-style],[data-act],[data-hide],img[data-full]");
+    const t = ev.target.closest("[data-goto],[data-open],[data-style],[data-act],[data-hide],[data-filter],[data-full]");
     if (!t) return;
+    if ("filter" in t.dataset) { filterItems(t.dataset.filter); return; }
     if (t.dataset.hide) {
       if (!confirm("이 항목을 보고서에서 뺄까요? (그날 보고서를 다시 정리해요)")) return;
       await Source.hide(t.dataset.hide);
@@ -116,20 +131,35 @@ async function showDay(day) {
     }
     if (t.dataset.goto) {
       ev.preventDefault();
+      filterItems("");
       const el = document.getElementById("it-" + cssId(t.dataset.goto));
-      if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1500); }
+      if (el) { el.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1500); }
     } else if (t.dataset.open) {
       ev.preventDefault();
       Source.openUrl(t.dataset.open);
     } else if (t.dataset.style) {
       pref.set("style", t.dataset.style);
       if (isNative) await Source.saveSettings({ style: t.dataset.style });
-      showDay(day);
+      rep.querySelectorAll("[data-style]").forEach(b => {
+        const on = b.dataset.style === t.dataset.style;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-pressed", String(on));
+      });
+      const phone = document.getElementById("phonePrev");
+      phone.className = `phone ${t.dataset.style}`;
+      const image = phone.querySelector("img");
+      if (image && data.cards?.[t.dataset.style]) image.src = data.cards[t.dataset.style];
+      const full = document.getElementById("cardFullLink");
+      if (full) full.href = data.cards?.[t.dataset.style] || "#";
     } else if (t.dataset.full) {
-      const v = Object.assign(document.createElement("div"), { className: "viewer" });
-      v.innerHTML = `<img src="${t.dataset.full}" alt="">`;
-      v.onclick = () => v.remove();
+      const v = Object.assign(document.createElement("dialog"), { className: "viewer" });
+      v.setAttribute("aria-label", "이미지 크게 보기");
+      v.innerHTML = `<button class="btn close">닫기</button><img src="${esc(t.dataset.full)}" alt="${esc(t.getAttribute("aria-label") || "선택한 자료")}">`;
+      v.querySelector("button").onclick = () => v.close();
+      v.onclick = (event) => { if (event.target === v) v.close(); };
+      v.onclose = () => { v.remove(); t.focus(); };
       document.body.append(v);
+      v.showModal();
     } else if (t.dataset.act === "run") {
       runNow({ day });
     } else if (t.dataset.act === "apply") {
@@ -144,7 +174,8 @@ async function showDay(day) {
     const cb = ev.target.closest("input[data-todo]");
     if (!cb) return;
     cb.closest(".todo").classList.toggle("done", cb.checked);
-    await Source.setTodo(cb.dataset.todo, cb.checked);
+    try { await Source.setTodo(cb.dataset.todo, cb.checked); }
+    catch (e) { cb.checked = !cb.checked; cb.closest(".todo").classList.toggle("done", cb.checked); toast("할 일 저장 실패: " + e.message); }
   };
   document.querySelectorAll(".daynav [data-day]").forEach((b) => (b.onclick = () => (location.hash = `#/day/${b.dataset.day}`)));
 }
@@ -152,10 +183,10 @@ async function showDay(day) {
 // ---------------- 기록 ----------------
 async function showDays() {
   await loadDays();
-  $view.innerHTML = `<h2 style="margin:20px 0 6px">기록</h2>
+  $view.innerHTML = `<div class="page-heading"><h1>기록</h1><p>모아 둔 자료와 보고서를 날짜별로 읽어보세요.</p></div>
     <div class="card list">${state.days.length ? state.days.map((d) => `<a class="row" href="#/day/${d.day}">
       <span class="d">${esc(d.day)}</span><span class="n">${d.count}개</span>
-      <span class="spacer" style="flex:1"></span><span class="muted">${d.digest_version ? `보고서 v${d.digest_version}` : "정리 전"}</span></a>`).join("")
+      <span class="spacer" style="flex:1"></span><span class="meta">${d.digest_version ? "정리 완료" : "정리 전"}</span>${icon("chevron-right")}</a>`).join("")
       : `<div class="empty">아직 기록이 없어요</div>`}</div>`;
 }
 
@@ -163,20 +194,20 @@ async function showDays() {
 async function showAdd() {
   if (isNative) return showOutbox();
   const st = await Source.status().catch(() => ({}));
-  $view.innerHTML = `<h2 style="margin:20px 0 6px">넣기</h2>
+  $view.innerHTML = `<div class="page-heading"><h1>자료 추가</h1><p>나에게 보낸 링크와 캡처를 한곳에 모으세요.</p></div>
     <div class="card">
-      <div class="drop" id="drop">카톡 내보내기 파일(.txt · .csv · .zip)이나 캡처·PDF 를<br>여기에 끌어다 놓거나 <b>눌러서 고르세요</b>
-        <input type="file" id="file" multiple hidden accept=".txt,.csv,.zip,image/*,.pdf"></div>
+      <button class="drop" id="drop" style="width:100%" type="button">${icon("circle-plus")}<br><b>파일을 선택하거나 여기에 끌어다 놓으세요</b><br><span class="meta">카톡 내보내기 TXT·CSV·ZIP, 이미지, PDF</span></button>
+      <input type="file" id="file" multiple hidden accept=".txt,.csv,.zip,image/*,.pdf">
       <div id="impResult" style="margin-top:12px"></div>
     </div>
-    <div class="card"><h2>카톡 '나와의 채팅' 내보내는 법</h2>
+    <details class="card"><summary>${icon("chevron-right", "disclosure-icon")}카톡 ‘나와의 채팅’ 내보내는 법</summary>
       <ol class="steps">
         <li><b>폰(안드로이드)</b>: 나와의 채팅 → 오른쪽 위 ≡ → ⚙ 설정 → <b>대화 내용 내보내기</b> → '텍스트 메시지만 보내기'를 누르고 공유 창에서 <b>하루서랍</b> 선택 (사진까지: '모든 메시지 내부 저장소에 저장')</li>
         <li><b>맥 카톡</b>: 나와의 채팅 → 메뉴(≡) → 대화 내용 내보내기 → 저장 위치를 <code>${esc(st.inbox || "~/하루서랍")}</code> 로 고르면 자동으로 들어가요</li>
         <li>같은 대화를 여러 번 넣어도 겹치지 않아요 (이미 넣은 메시지는 건너뜀)</li>
         <li>다른 사람이 있는 대화방은 받지 않아요 — 나와의 채팅만</li>
       </ol>
-    </div>
+    </details>
     <div class="card"><h2>최근 넣은 것</h2>${(st.imports || []).map((i) => `<div class="meta">${esc(i.at?.slice(0, 16).replace("T", " "))} · ${esc(i.name)} · 새 ${i.stats?.new ?? 0}개 / 중복 ${i.stats?.dup ?? 0}</div>`).join("") || `<div class="meta">아직 없어요</div>`}</div>`;
   const drop = document.getElementById("drop");
   const file = document.getElementById("file");
@@ -200,9 +231,9 @@ async function showAdd() {
 async function showOutbox() {
   const j = await Source.outbox().catch(() => ({ items: [] }));
   const items = j.items || [];
-  $view.innerHTML = `<h2 style="margin:20px 0 6px">보낼 것</h2>
+  $view.innerHTML = `<div class="page-heading"><h1>보낼 자료</h1><p>노트북에서 정리할 링크와 캡처입니다.</p></div>
     <div class="card"><p class="meta" style="margin:0 0 10px">아무 앱에서 <b>공유 → 하루서랍</b>을 누르면 여기 담겼다가 맥으로 갑니다 (맥이 받으면 사라짐).</p>
-      ${items.length ? items.map((it) => `<div class="todo"><span>${it.kind === "image" ? "🖼️" : it.kind === "export" ? "💬" : "🔗"}</span>
+      ${items.length ? items.map((it) => `<div class="todo"><span>${icon(it.kind === "image" ? "image" : it.kind === "export" ? "message-square" : "link")}</span>
         <span style="flex:1">${esc((it.text || it.name || "").slice(0, 80))}<br><span class="meta">${esc(it.ts?.slice(5, 16).replace("T", " "))} · ${esc(it.state)}</span></span></div>`).join("")
         : `<div class="empty" style="padding:20px">모두 맥으로 보냈어요</div>`}
       <div class="row2" style="margin-top:12px"><button class="btn small" id="sync">지금 보내기·받기</button>
@@ -219,7 +250,7 @@ async function showLink() {
   if (isNative) return showLinkPhone();
   const j = await Source.pairing();
   const ph = j.phone;
-  $view.innerHTML = `<h2 style="margin:20px 0 6px">폰 연결</h2>
+  $view.innerHTML = `<div class="page-heading"><h1>폰 연결</h1><p>노트북에서 정리한 보고서를 폰에서도 읽어보세요.</p></div>
     <div class="card"><div class="lockprev">
       <img src="${j.qr}" alt="연결 QR" style="width:220px;height:220px;border-radius:12px;background:#fff;padding:6px">
       <div class="side"><ol class="steps">
@@ -245,7 +276,7 @@ async function showLink() {
 
 async function showLinkPhone() {
   const st = await Source.status().catch(() => ({}));
-  $view.innerHTML = `<h2 style="margin:20px 0 6px">맥 연결</h2>
+  $view.innerHTML = `<div class="page-heading"><h1>맥 연결</h1><p>분석할 노트북과 연결해 보고서를 받아보세요.</p></div>
     <div class="card">${st.paired ? `<div><span class="ok">● 연결됨</span> ${esc(st.macName || "맥")}</div>
         <p class="meta">마지막으로 맥 소식: ${esc(st.lastHb || "아직 없음")}<br>다음 정리 예정: ${esc(st.macNext || "-")}</p>`
       : `<p>맥의 하루서랍 대시보드 → <b>폰 연결</b> 화면의 QR 을 찍으세요.</p>`}
@@ -275,21 +306,21 @@ async function showSettings() {
   if (isNative) return showSettingsPhone();
   const s = await Source.settings();
   const st = await Source.status(true).catch(() => ({}));
-  $view.innerHTML = `<h2 style="margin:20px 0 6px">설정</h2>
+  $view.innerHTML = `<div class="page-heading"><h1>설정</h1><p>수집과 보고서를 내 생활에 맞춰 설정하세요.</p></div>
     <div class="card"><h2>유튜브 저장 영상</h2><p class="meta">경제·AI·휴식 재생목록의 새 저장분을 하루 보고서에 넣어요.</p><a class="btn small" href="#/youtube">유튜브 연결·수집 설정</a></div>
-    <div class="card">
-      <div class="field"><label>정리 시각 (쉼표로)</label><input type="text" id="schedule" value="${esc((s.schedule || []).join(", "))}">
+    <div class="card settings-form">
+      <div class="field"><label for="schedule">정리 시각 (쉼표로)</label><input type="text" id="schedule" value="${esc((s.schedule || []).join(", "))}">
         <div class="hint">이 시각마다 새로 모은 걸 정리해 폰으로 보내요. 폰에서 공유하면 잠잠해진 뒤(3분) 바로 정리해요 (최소 ${s.min_run_gap_min || 20}분 간격).</div></div>
-      <div class="field"><label>하루가 바뀌는 시각</label><input type="number" id="boundary" min="0" max="8" value="${s.day_boundary_hour}">
+      <div class="field"><label for="boundary">하루가 바뀌는 시각</label><input type="number" id="boundary" min="0" max="8" value="${s.day_boundary_hour}">
         <div class="hint">새벽 이 시각 전에 보낸 건 전날로 칩니다.</div></div>
-      <div class="field"><label>시간대</label><input type="text" id="tz" value="${esc(s.timezone)}">
+      <div class="field"><label for="tz">시간대</label><input type="text" id="tz" value="${esc(s.timezone)}">
         <div class="hint">폰이 연결되면 폰 시간대로 자동으로 맞춰요. (이 맥의 시스템 시간대와 따로)</div></div>
-      <div class="field"><label>나에 대한 소개 (분석할 때 참고)</label><textarea id="profile">${esc(s.profile)}</textarea></div>
-      <div class="field"><label>카테고리 (쉼표로)</label><input type="text" id="cats" value="${esc((s.categories || []).join(", "))}"></div>
-      <div class="field"><label>AI</label><select id="backend">
+      <div class="field"><label for="profile">나에 대한 소개 (분석할 때 참고)</label><textarea id="profile">${esc(s.profile)}</textarea></div>
+      <div class="field"><label for="cats">카테고리 (쉼표로)</label><input type="text" id="cats" value="${esc((s.categories || []).join(", "))}"></div>
+      <div class="field"><label for="backend">AI</label><select id="backend">
         ${["codex", "ollama", "fake"].map((b) => `<option value="${b}" ${s.llm.backend === b ? "selected" : ""}>${{ codex: "Codex (ChatGPT 구독, 기본)", ollama: "ollama (이 맥 로컬 모델)", fake: "규칙 기반 (AI 없이 시험용)" }[b]}</option>`).join("")}
       </select><div class="hint">${st.llm ? (st.llm.ok ? `<span class="ok">사용 가능</span> ${esc(st.llm.msg || "")}` : `<span class="bad">사용 불가</span> ${esc(st.llm.msg || "")}`) : ""}</div></div>
-      <div class="field"><label>중계 서버</label><input type="text" id="relay" value="${esc(s.relay?.server || "")}">
+      <div class="field"><label for="relay">중계 서버</label><input type="text" id="relay" value="${esc(s.relay?.server || "")}">
         <div class="hint">기본 ntfy.sh (무료·계정 없음). 직접 띄운 ntfy 주소로 바꿀 수 있어요. 바꾸면 폰을 다시 연결하세요.</div></div>
       <button class="btn primary" id="save">저장</button>
     </div>
@@ -315,7 +346,7 @@ async function showSettings() {
 
 async function showSettingsPhone() {
   const s = await Source.settings();
-  $view.innerHTML = `<h2 style="margin:20px 0 6px">설정</h2>
+  $view.innerHTML = `<div class="page-heading"><h1>설정</h1><p>수집과 보고서를 내 생활에 맞춰 설정하세요.</p></div>
     <div class="card"><h2>잠금화면</h2>
       <label class="todo"><input type="checkbox" id="wall" ${s.wallpaper ? "checked" : ""}><span style="flex:1">잠금화면 배경에 오늘 정리 카드 넣기</span></label>
       <label class="todo"><input type="checkbox" id="notif" ${s.notify ? "checked" : ""}><span style="flex:1">잠금화면 알림으로도 보여 주기 (조용히, 소리 없음)</span></label>
@@ -366,24 +397,31 @@ async function runNow(opts = {}) {
     if (!st.running) break;
   }
   $run.disabled = false;
-  $run.textContent = "↻ 정리하기";
+  $run.innerHTML = `${icon("list")} 정리하기`;
   toast("정리했어요");
   route();
 }
 $run.onclick = () => runNow();
+$run.innerHTML = `${icon("list")} 정리하기`;
 
 // ---------------- 길 찾기 ----------------
 async function route() {
   const h = location.hash.replace(/^#\/?/, "");
   drawTabs(h);
   window.scrollTo(0, 0);
-  if (h.startsWith("day/")) return showDay(h.slice(4));
-  if (h === "days") return showDays();
-  if (h === "add") return showAdd();
-  if (h === "link") return showLink();
-  if (h === "settings") return showSettings();
-  if (h === "youtube" && !isNative) return showYoutube($view, toast, runNow);
-  return showDay(null);
+  $view.innerHTML = '<p class="empty meta" role="status">불러오는 중…</p>';
+  try {
+    if (h.startsWith("day/")) return await showDay(h.slice(4));
+    if (h === "days") return await showDays();
+    if (h === "add") return await showAdd();
+    if (h === "link") return await showLink();
+    if (h === "settings") return await showSettings();
+    if (h === "youtube" && !isNative) return await showYoutube($view, toast, runNow);
+    return await showDay(null);
+  } catch (e) {
+    $view.innerHTML = `<section class="empty"><h1>화면을 불러오지 못했어요</h1><p>${esc(e.message)}</p><button class="btn" id="retryView">다시 불러오기</button></section>`;
+    document.getElementById("retryView").onclick = route;
+  }
 }
 window.addEventListener("hashchange", route);
 
