@@ -327,6 +327,7 @@ utilities never precede the daily reading. */
 }
 .hero .summary {
   color:var(--text-2);
+  white-space:pre-line;
   margin:0;
   line-height:1.8;
 }
@@ -499,6 +500,7 @@ utilities never precede the daily reading. */
 }
 .item .sum {
   color:var(--text-2);
+  white-space:pre-line;
   font-size:14px;
   margin:7px 0 0;
 }

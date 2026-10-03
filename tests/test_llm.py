@@ -128,6 +128,28 @@ def test_repeated_link_does_not_reuse_heuristic_when_ai_recovers(ai):
     assert store.get_item("new")["analysis"]["source"] == "codex"
 
 
+def test_old_brief_analysis_is_upgraded_then_detailed_analysis_is_reused(ai):
+    from haru.analyze import SUMMARY_VERSION, analyze_items
+    calls, _ = ai
+    settings = config.load_settings()
+    item = {"id": "brief", "day": "2026-09-20", "ts": "2026-09-20T10:00:00+09:00",
+            "source": "share", "kind": "link", "url": "https://example.com/detail",
+            "url_key": "detail-link", "meta": {"title": "원문"}}
+    store.upsert_item(item)
+    store.update_item("brief", status="analyzed", analysis={"source": "codex", "summary": "이전 짧은 요약"})
+    store.db().execute("UPDATE items SET updated_at=? WHERE id='brief'", ("2026-09-20T10:00:00+09:00",))
+    for ident, day in (("expanded", "2026-10-01"), ("repeated", "2026-10-02")):
+        store.upsert_item({**item, "id": ident, "day": day, "ts": f"{day}T10:00:00+09:00"})
+        store.update_item(ident, status="enriched")
+        analyze_items([store.get_item(ident)], settings)
+    expanded = store.get_item("expanded")["analysis"]
+    repeated = store.get_item("repeated")["analysis"]
+    assert expanded["summary_version"] == SUMMARY_VERSION
+    assert expanded["summary"] != "이전 짧은 요약"
+    assert repeated["reused_from"] == "expanded"
+    assert calls["codex"] == 1
+
+
 @pytest.mark.parametrize("reply", ['{"broken":', '[]', 'null'])
 def test_malformed_codex_reply_falls_back(home, monkeypatch, reply):
     from pathlib import Path

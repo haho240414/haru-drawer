@@ -91,7 +91,13 @@ def _digest_md(digest: dict, item_files: dict[str, str]) -> str:
         lines += [f"### {_md(theme.get('name'))}", "", _md(theme.get("insight")), ""]
     lines += ["## 모은 자료", ""]
     for item in digest.get("items", []):
-        lines.append(f"- [{_md(item.get('title'))}](<{item_files[item['id']]}>) · {_md(item.get('category'))}")
+        lines += [f"### {_md(item.get('title'))}", "",
+                  f"{_md(item.get('category'))} · [분류 파일](<{item_files[item['id']]}>)", "",
+                  _md(item.get("summary")), ""]
+        lines += [f"- {_md(point)}" for point in item.get("key_points", [])]
+        if item.get("note"):
+            lines += ["", _md(item["note"])]
+        lines.append("")
     if not items:
         lines.append("보고서에 남은 항목이 없습니다.")
     lines += ["", "## 다음에 할 것", "", _md(digest.get("tomorrow")), ""]

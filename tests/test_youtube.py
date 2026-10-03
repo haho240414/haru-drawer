@@ -14,6 +14,15 @@ REST = {"id": "PL_test_rest_list", "name": "휴식", "topic": "휴식"}
 CLIENT = {"installed": {"client_id": "test.apps.googleusercontent.com", "client_secret": "test-client-secret"}}
 
 
+def test_detail_prompt_preserves_evidence_beyond_the_old_excerpt():
+    from haru.enrich import summarize_meta_for_prompt
+    transcript = "배경 설명. " * 700 + "마지막 사례: 1인당 250만원이며 세전 기준이다."
+    prompt = json.loads(summarize_meta_for_prompt({"title": "사례 비교", "transcript": transcript,
+                                                  "content_basis": "partial_transcript"}))
+    assert "250만원이며 세전 기준" in prompt["본문(일부)"]
+    assert prompt["content_basis"] == "partial_transcript"
+
+
 @pytest.fixture()
 def cfg(home, monkeypatch):
     s = config.update_settings({"timezone": "Asia/Seoul", "llm": {"backend": "fake"},

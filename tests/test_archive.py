@@ -41,6 +41,21 @@ def test_pipeline_writes_readable_report_and_updates_todo(home):
     assert client.get(f"/reports/{DAY}/개인메모.md").status_code == 404
 
 
+def test_detailed_paragraphs_and_evidence_are_in_the_main_saved_report(home):
+    memo(home)
+    data = store.get_digest(DAY)["data"]
+    item = data["items"][0]
+    item["summary"] = "원문에서 설명한 핵심 내용과 그 이유.\n\n구체적인 사례와 조건을 구분한 두 번째 문단."
+    item["key_points"] = [f"근거 {n}: 단위와 조건까지 확인한 상세 포인트" for n in range(1, 8)]
+    store.save_digest(DAY, data, "expanded-summary")
+    archive.export_day(DAY)
+    folder = archive.day_dir(DAY)
+    for name in ("보고서.md", "보고서.html"):
+        content = (folder / name).read_text()
+        assert item["summary"] in content
+        assert all(point in content for point in item["key_points"])
+
+
 def test_removal_clears_exported_items_and_preserves_personal_notes(home):
     memo(home)
     folder = archive.day_dir(DAY)

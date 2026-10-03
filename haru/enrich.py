@@ -119,7 +119,7 @@ def fetch_youtube(url: str) -> dict:
             "duration": info.get("duration"),
             "upload_date": info.get("upload_date"),
             "view_count": info.get("view_count"),
-            "description": _clean(info.get("description"), 1500),
+            "description": _clean(info.get("description"), 4000),
             "chapters": [c.get("title") for c in (info.get("chapters") or [])][:15],
             "image": info.get("thumbnail") or "",
         }
@@ -132,7 +132,7 @@ def fetch_youtube(url: str) -> dict:
                 if r.ok:
                     ev = r.json().get("events", [])
                     words = "".join(seg.get("utf8", "") for e in ev for seg in (e.get("segs") or []))
-                    out["transcript"] = _clean(words.replace("\n", " "), 3000)
+                    out["transcript"] = _clean(words.replace("\n", " "), 16000)
                     out["transcript_lang"] = lang
     except Exception as e:  # 막히면 oEmbed 로 제목만이라도
         out["error"] = f"yt-dlp: {str(e)[:120]}"
@@ -191,5 +191,5 @@ def summarize_meta_for_prompt(meta: dict) -> str:
                                      "youtube_playlists", "saved_at") if meta.get(k)}
     body = meta.get("transcript") or meta.get("text") or ""
     if body:
-        keep["본문(일부)"] = body[:2500]
+        keep["본문(일부)"] = body[:12000]
     return json.dumps(keep, ensure_ascii=False)
