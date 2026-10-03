@@ -176,6 +176,9 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
             youtube = sync(settings, log)
             touched = set(enrich_pending(log))
             touched |= set(youtube["days"])
+            from .transcribe import pending as transcribe_pending
+            transcription = transcribe_pending(settings, log)
+            touched |= set(transcription["days"])
             upgrade = requeue_heuristic(settings, log)
             touched |= upgrade
             pending = store.items_by_status(("enriched",))
@@ -218,9 +221,11 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
                     except Exception as e:
                         log(f"폰으로 보내기 실패: {e}")
                         store.log_event("error", f"보내기 실패: {str(e)[:160]}")
-            result = {"ok": True, "days": sorted(target), "built": built, "published": published,
+            result = {"ok": not bool(transcription["errors"] or stats.get("transcript_incomplete")),
+                      "days": sorted(target), "built": built, "published": published,
                       "exported": exported, "export_errors": export_errors,
-                      "analysis": stats, "youtube": youtube, "sec": round(time.time() - t0, 1), "at": iso(now())}
+                      "analysis": stats, "youtube": youtube, "transcription": transcription,
+                      "sec": round(time.time() - t0, 1), "at": iso(now())}
             store.kv_set("last_run", result)
             store.log_event("run", f"정리 완료: 보고서 {len(built)}개, {result['sec']}초")
             return result

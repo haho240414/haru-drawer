@@ -104,7 +104,7 @@ def fetch_naver_blog(url: str) -> dict:
 
 
 def fetch_youtube(url: str) -> dict:
-    """제목·채널·길이·설명 + (있으면) 자동 자막 앞부분. yt-dlp 로 메타데이터만 (영상은 안 받음)."""
+    """제목·채널·길이·설명 + 제공된 전체 자막. 영상 음성은 별도 로컬 전사 단계에서 처리."""
     out: dict = {}
     try:
         import yt_dlp
@@ -123,7 +123,7 @@ def fetch_youtube(url: str) -> dict:
             "chapters": [c.get("title") for c in (info.get("chapters") or [])][:15],
             "image": info.get("thumbnail") or "",
         }
-        subs = (info.get("subtitles") or {}) | (info.get("automatic_captions") or {})
+        subs = (info.get("automatic_captions") or {}) | (info.get("subtitles") or {})
         lang = next((k for k in ("ko", "ko-KR", "en", "en-US") if k in subs), None)
         if lang:
             fmt = next((f for f in subs[lang] if f.get("ext") == "json3"), None)
@@ -131,8 +131,14 @@ def fetch_youtube(url: str) -> dict:
                 r = requests.get(fmt["url"], timeout=TIMEOUT)
                 if r.ok:
                     ev = r.json().get("events", [])
-                    words = "".join(seg.get("utf8", "") for e in ev for seg in (e.get("segs") or []))
-                    out["transcript"] = _clean(words.replace("\n", " "), 16000)
+                    from .transcribe import format_segments
+                    segments = [{"start": e.get("tStartMs", 0) / 1000,
+                                 "end": (e.get("tStartMs", 0) + e.get("dDurationMs", 0)) / 1000,
+                                 "text": "".join(seg.get("utf8", "") for seg in (e.get("segs") or [])).strip()}
+                                for e in ev if e.get("segs")]
+                    segments = [s for s in segments if s["text"]]
+                    out["transcript"] = format_segments(segments)
+                    out["transcript_segments"] = segments
                     out["transcript_lang"] = lang
     except Exception as e:  # 막히면 oEmbed 로 제목만이라도
         out["error"] = f"yt-dlp: {str(e)[:120]}"
@@ -145,8 +151,8 @@ def fetch_youtube(url: str) -> dict:
         except Exception:
             pass
     if out.get("transcript"):
-        out["content_basis"] = "partial_transcript"
-        out["note"] = "자막 일부와 제목·설명 기준으로 정리했어요. 전체 영상 요약은 아니에요"
+        out["content_basis"] = "full_transcript"
+        out["note"] = "YouTube 제공 전체 자막을 정리했어요. 자동 자막은 오인식될 수 있고 화면 속 정보는 포함하지 않아요"
     else:
         out["content_basis"] = "metadata_only"
         out["note"] = "자막을 확보하지 못해 제목·설명 기준으로 정리했어요"
@@ -190,6 +196,10 @@ def summarize_meta_for_prompt(meta: dict) -> str:
                                      "chapters", "published", "error", "note", "content_basis",
                                      "youtube_playlists", "saved_at") if meta.get(k)}
     body = meta.get("transcript") or meta.get("text") or ""
-    if body:
+    if meta.get("transcript_notes_complete") and meta.get("transcript_notes"):
+        keep["전문 전체의 구간별 정리"] = meta["transcript_notes"]
+    elif meta.get("content_basis") in {"full_transcript", "audio_transcript"} and body:
+        keep["영상 음성/자막 전문"] = body
+    elif body:
         keep["본문(일부)"] = body[:12000]
     return json.dumps(keep, ensure_ascii=False)

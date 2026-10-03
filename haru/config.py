@@ -63,6 +63,8 @@ DEFAULTS: dict = {
     # 같은 보고서를 노트북의 읽을 수 있는 파일·분류 폴더로도 보관.
     "archive": {"enabled": True, "directory": None},  # 기본 ~/하루서랍/정리
     "youtube": {"enabled": False, "mode": "api", "playlists": []},  # 토큰은 별도 사용자 전용 파일에 저장
+    "transcription": {"enabled": False, "python": None, "model": "mlx-community/whisper-medium-mlx",
+                      "cache_directory": None, "language": None, "max_seconds": 10800, "timeout": 3600},
 }
 
 

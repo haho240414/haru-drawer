@@ -115,6 +115,10 @@ function itemHtml(it, ctx) {
       ${it.key_points?.length || it.actions?.length ? `<details class="item-extra"><summary>${icon("chevron-right", "disclosure-icon")}핵심 내용과 실행 메모</summary>
         ${it.key_points?.length ? `<ul class="kp">${it.key_points.map(k => `<li>${esc(k)}</li>`).join("")}</ul>` : ""}
         ${it.actions?.length ? `<div class="acts">${it.actions.map(a => `<span class="act">${esc(a)}</span>`).join("")}</div>` : ""}</details>` : ""}
+      ${it.transcript_sections?.length ? `<details class="item-extra"><summary>${icon("chevron-right", "disclosure-icon")}영상 전체 구간별 정리</summary>
+        ${it.transcript_sections.map(s => `<h4>구간 ${esc(s.part)}/${esc(s.total)}</h4><p class="sum">${esc(s.summary)}</p>
+          <ul class="kp">${(s.points || []).map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+          ${(s.uncertain || []).map(p => `<p class="note">확인 필요: ${esc(p)}</p>`).join("")}`).join("")}</details>` : ""}
       <div class="links">
         ${it.url ? `<a href="${esc(it.url)}" data-open="${esc(it.url)}">${esc(it.site || host)} 열기 ${icon("external-link")}</a>` : ""}
         ${it.duration ? `<span class="muted">${fmtDuration(it.duration)}${it.channel ? ` · ${esc(it.channel)}` : ""}</span>` : ""}

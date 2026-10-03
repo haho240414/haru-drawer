@@ -104,7 +104,7 @@ def _digest_md(digest: dict, item_files: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def _report_html(digest: dict, assets: dict[str, str]) -> str:
+def _report_html(digest: dict, assets: dict[str, str], transcripts: dict[str, str] | None = None) -> str:
     esc = lambda v: html.escape(str(v or ""), quote=True)
     items = {i["id"]: i for i in digest.get("items", [])}
     highlights = "".join(f"<li><strong>{esc(items.get(h.get('id'), {}).get('title'))}</strong><p>{esc(h.get('why'))}</p></li>"
@@ -134,8 +134,16 @@ def _report_html(digest: dict, assets: dict[str, str]) -> str:
                      if item.get("kind") == "image" else f'<a href="{src}">첨부 파일 열기</a>')
         points = "".join(f"<li>{esc(p)}</li>" for p in item.get("key_points", []))
         note = f'<p class="meta">{esc(item["note"])}</p>' if item.get("note") else ""
+        sections = "".join(f'<h4>구간 {esc(s.get("part"))}/{esc(s.get("total"))}</h4>'
+                           f'<p>{esc(s.get("summary"))}</p><ul>' +
+                           "".join(f'<li>{esc(p)}</li>' for p in s.get("points", [])) + '</ul>' +
+                           "".join(f'<p class="meta">확인 필요: {esc(p)}</p>' for p in s.get("uncertain", []))
+                           for s in item.get("transcript_sections", []))
+        details = f'<details><summary>영상 전체 구간별 정리</summary>{sections}</details>' if sections else ""
+        transcript = (transcripts or {}).get(item["id"])
+        full_link = f' · <a href="{quote(transcript)}" download>시간 표시 전문 받기</a>' if transcript else ""
         cards.append(f'<article><span class="tag">{esc(item.get("category"))}</span><h3>{esc(item.get("title"))}</h3>'
-                     f'<p>{esc(item.get("summary"))}</p><ul>{points}</ul>{media}{note}{link}</article>')
+                     f'<p>{esc(item.get("summary"))}</p><ul>{points}</ul>{details}{media}{note}{link}{full_link}</article>')
     content = "".join(cards) or "<p>보고서에 남은 항목이 없습니다.</p>"
     backend = "AI 분석" if digest.get("llm", {}).get("backend") not in (None, "heuristic", "fake") else "규칙 기반 정리"
     return f'''<!doctype html>
@@ -206,13 +214,14 @@ def export_day(day: str, settings: dict | None = None) -> Path | None:
         for todo in digest.get("todos", []):
             todo["done"] = todo.get("key") in done
         files: dict[str, bytes] = {}
-        item_files, assets = {}, {}
+        item_files, assets, transcripts = {}, {}, {}
         for item in digest.get("items", []):
             item_id = item["id"]
             ident = hashlib.sha256(item_id.encode()).hexdigest()[:16]
             relative = f"분류/{_name(item.get('category') or '기타')}/{_name(item.get('title') or '항목')}-{ident}.md"
             item_files[item_id] = relative
             raw = store.get_item(item_id) or {}
+            meta = raw.get("meta") or {}
             media = item.get("media")
             if media:
                 original = (config.MEDIA / media).resolve()
@@ -233,10 +242,23 @@ def export_day(day: str, settings: dict | None = None) -> Path | None:
                 lines += [f"[첨부 원본](<../../{assets[item_id]}>)", ""]
             if item.get("note"):
                 lines += [_md(item["note"]), ""]
+            if meta.get("transcript"):
+                transcript_path = f"전문/{_name(item.get('title') or '영상')}-{ident}.txt"
+                transcripts[item_id] = transcript_path
+                files[transcript_path] = (meta["transcript"] + "\n").encode()
+                lines += ["## 영상 전문", "", f"[시간 표시 전문](<../../{transcript_path}>)", ""]
+                if meta.get("transcript_segments"):
+                    from .transcribe import srt
+                    files[transcript_path[:-4] + ".srt"] = srt(meta["transcript_segments"]).encode()
+                for section in item.get("transcript_sections", []):
+                    lines += [f"### 구간 {section['part']}/{section['total']}", "", _md(section.get("summary")), ""]
+                    lines += [f"- {_md(p)}" for p in section.get("points", [])]
+                    lines += [f"- 확인 필요: {_md(p)}" for p in section.get("uncertain", [])]
+                    lines += [""]
             files[relative] = "\n".join(lines).encode()
         report = _digest_md(digest, item_files)
         files["보고서.md"] = report.encode()
-        files["보고서.html"] = _report_html(digest, assets).encode()
+        files["보고서.html"] = _report_html(digest, assets, transcripts).encode()
         files["할일.md"] = ("# 할 일\n\n" + "\n".join(
             f"- [{'x' if t.get('done') else ' '}] {_md(t.get('text'))} ({_md(t.get('when'))})" for t in digest.get("todos", [])) + "\n").encode()
         files["보고서.json"] = json.dumps(digest, ensure_ascii=False, indent=2).encode()

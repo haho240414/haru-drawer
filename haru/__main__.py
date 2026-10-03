@@ -35,12 +35,30 @@ def main(argv=None) -> int:
     p = sub.add_parser("pair")
     p.add_argument("--reset", action="store_true")
     sub.add_parser("status")
+    p = sub.add_parser("transcribe", help="지정한 날짜의 YouTube 전체 음성 확보·전사 후 보고서 재작성")
+    p.add_argument("--day", required=True)
+    p.add_argument("--id", help="특정 항목만 처리")
+    p.add_argument("--no-publish", action="store_true")
     p = sub.add_parser("youtube", help="YouTube 계정 상태·재생목록 조회·새 저장분 수집")
     p.add_argument("action", choices=["status", "playlists", "sync", "snapshot", "due", "done"])
     p.add_argument("--file", type=Path, help="로그인된 브라우저에서 확인한 전체 목록 JSON")
     a = ap.parse_args(argv)
     config.ensure_dirs()
     settings = config.load_settings()
+    if a.cmd == "transcribe":
+        from .transcribe import queue_day
+        from .pipeline import run, run_lock
+        if not settings.get("transcription", {}).get("enabled"):
+            print("로컬 음성 전사 환경을 먼저 설정해야 해요", file=sys.stderr)
+            return 1
+        with run_lock():
+            count = queue_day(a.day, a.id)
+        if not count:
+            print("처리할 YouTube 영상이 없어요", file=sys.stderr)
+            return 1
+        result = run(days=[a.day], publish=not a.no_publish, force_digest=True)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 1
     if a.cmd == "youtube":
         from . import youtube
         try:
@@ -67,7 +85,7 @@ def main(argv=None) -> int:
         from .pipeline import run
         res = run(days=a.day, publish=not a.no_publish, force_digest=a.force)
         print(json.dumps(res, ensure_ascii=False, indent=1))
-        return 0
+        return 0 if res["ok"] else 1
     if a.cmd == "export":
         from .archive import export_day
         if a.output:
