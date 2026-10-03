@@ -171,6 +171,13 @@ def test_hiding_last_item_clears_report_and_phone_card(paired):
                   "text": "관리사무소 전화하기"}, None, 4)
     pipeline.run(publish=True)
     initial = store.get_digest("2026-10-03")
+    # 폰에서 체크한 할 일도 같은 노트북 보고서 파일에 반영한다.
+    key = initial["data"]["todos"][0]["key"]
+    phone.send_up({"t": "todo", "key": key, "done": True})
+    from haru import archive, daemon
+    daemon.handle_phone(relay.Relay.from_settings(config.load_settings()), config.load_settings())
+    local_digest = json.loads((archive.day_dir("2026-10-03") / "보고서.json").read_text())
+    assert local_digest["todos"][0]["done"] is True
     response = app.test_client().post("/api/item/s:only/hide")
     assert response.status_code == 200
     result = pipeline.run(days=["2026-10-03"], publish=True)
@@ -200,3 +207,18 @@ def test_lockcards_render_concurrently(home):
         with Image.open(path) as image:
             assert image.size == (360, 780) and image.mode == "RGBA"
     assert paths[0].read_bytes() != paths[1].read_bytes()
+
+
+def test_file_export_failure_does_not_block_phone(paired, monkeypatch):
+    from haru import archive, pipeline
+    from haru.ingest import import_share
+    _, phone = paired
+    import_share({"id": "export-failure", "ts": "2026-10-03T10:00:00+09:00", "kind": "text",
+                  "text": "보고서 파일과 폰 전달을 확인하기"}, None, 4)
+    def fail(*_):
+        raise OSError("시험용 저장 권한 오류")
+    monkeypatch.setattr(archive, "export_day", fail)
+    result = pipeline.run(publish=True, log=lambda *_: None)
+    assert result["exported"] == [] and result["export_errors"] == ["2026-10-03"]
+    assert result["published"] == ["2026-10-03"]
+    assert any(message.obj["t"] == "digest" for message in phone.poll(phone.down))

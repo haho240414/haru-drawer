@@ -87,6 +87,21 @@ async function showDay(day) {
   };
   const rep = document.getElementById("report");
   renderReport(rep, data, ctx);
+  if (d && !isNative) {
+    rep.insertAdjacentHTML("beforebegin", `<div class="card"><h2>노트북에 보관한 파일</h2>
+      <p class="meta">같은 보고서를 날짜별 파일로 저장해요. 할 일·링크 목록·분류한 원본도 함께 보관합니다.</p>
+      <div class="row2"><button class="btn small" id="saveFiles">파일 ${data.archive?.exists ? "갱신" : "만들기"}</button>
+      ${data.archive?.exists ? `<a class="btn small" href="${esc(data.archive.url)}" target="_blank" rel="noopener">보고서 보기</a>` : ""}</div>
+      <p class="meta" style="overflow-wrap:anywhere">${esc(data.archive?.path || "")}</p></div>`);
+    document.getElementById("saveFiles").onclick = async (ev) => {
+      ev.target.disabled = true;
+      try {
+        await Source.exportDay(day);
+        toast("노트북에 파일로 저장했어요");
+        await showDay(day);
+      } catch (e) { toast("파일 저장 실패: " + e.message); ev.target.disabled = false; }
+    };
+  }
   rep.onclick = async (ev) => {
     const t = ev.target.closest("[data-goto],[data-open],[data-style],[data-act],[data-hide],img[data-full]");
     if (!t) return;

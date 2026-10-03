@@ -249,3 +249,10 @@ def set_todo_done(key: str, done: bool) -> None:
 
 def todos_done() -> set[str]:
     return {r["key"] for r in db().execute("SELECT key FROM todos_done").fetchall()}
+
+
+def days_for_todo(key: str) -> list[str]:
+    if not key:
+        return []
+    rows = db().execute("SELECT day, data FROM digests WHERE data LIKE ?", (f"%{key}%",)).fetchall()
+    return [r["day"] for r in rows if any(t.get("key") == key for t in json.loads(r["data"]).get("todos", []))]

@@ -27,6 +27,9 @@ def main(argv=None) -> int:
     p.add_argument("--day", action="append")
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-publish", action="store_true")
+    p = sub.add_parser("export", help="분석된 보고서를 날짜별 노트북 파일로 저장 (AI 재호출 없이)")
+    p.add_argument("--day", action="append")
+    p.add_argument("--output", type=Path)
     sub.add_parser("serve")
     sub.add_parser("daemon")
     p = sub.add_parser("pair")
@@ -47,6 +50,15 @@ def main(argv=None) -> int:
         from .pipeline import run
         res = run(days=a.day, publish=not a.no_publish, force_digest=a.force)
         print(json.dumps(res, ensure_ascii=False, indent=1))
+        return 0
+    if a.cmd == "export":
+        from .archive import export_day
+        if a.output:
+            settings["archive"] = {"enabled": True, "directory": str(a.output.expanduser().resolve())}
+        days = a.day or [d[0] for d in store.db().execute("SELECT day FROM digests ORDER BY day")]
+        for day in days:
+            folder = export_day(day, settings)
+            print(json.dumps({"day": day, "path": str(folder) if folder else None}, ensure_ascii=False))
         return 0
     if a.cmd == "serve":
         from .server import main as serve

@@ -33,6 +33,7 @@ export const MacSource = {
   async pairing() { return api("/api/pairing"); },
   async resetPairing() { return post("/api/pairing/reset"); },
   async publish(day) { return post(`/api/publish/${day}`); },
+  async exportDay(day) { return post(`/api/archive/${day}`); },
   async settings() { return api("/api/settings"); },
   async saveSettings(patch) { return post("/api/settings", patch); },
   openUrl(url) { window.open(url, "_blank", "noopener"); },

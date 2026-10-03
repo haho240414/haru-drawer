@@ -131,6 +131,8 @@ def handle_phone(rel: Relay, settings: dict) -> dict:
                 out["resend"].append(obj.get("day") or LATEST)
             elif t == "todo":
                 store.set_todo_done(obj.get("key", ""), bool(obj.get("done")))
+                from .archive import refresh_todo
+                refresh_todo(obj.get("key", ""))
             store.kv_set("phone_last", iso(now()))
         except Exception as e:
             log.exception("폰 메시지 처리 실패: %s", e)

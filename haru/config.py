@@ -60,6 +60,8 @@ DEFAULTS: dict = {
     # 폰이 페어링 때 알려 주는 화면 크기 (모르면 갤럭시 S 기본값)
     "device": {"w": 1080, "h": 2340, "density": 3.0, "model": ""},
     "port": 8891,
+    # 같은 보고서를 노트북의 읽을 수 있는 파일·분류 폴더로도 보관.
+    "archive": {"enabled": True, "directory": None},  # 기본 ~/하루서랍/정리
 }
 
 

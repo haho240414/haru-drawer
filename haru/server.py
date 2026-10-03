@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 
-from . import config, inbox, store
+from . import archive, config, inbox, store
 from .lockcard import card_from_digest, render
 from .pipeline import Busy, latest_day, publish_day, run
 from .relay import new_pairing, pairing_code
@@ -74,13 +74,21 @@ def api_day(day):
         digest["published_at"] = dg.get("published_at")
     raw = [{"id": i["id"], "ts": i["ts"], "kind": i["kind"], "text": i.get("text"), "url": i.get("url"),
             "status": i["status"], "source": i["source"], "media": i.get("media")} for i in items]
-    return jsonify({"day": day, "digest": digest, "items": raw, "pending": pending})
+    try:
+        folder = archive.day_dir(day)
+        saved = folder / "보고서.html"
+        file_archive = {"path": str(folder), "exists": saved.is_file(), "url": f"/reports/{day}/보고서.html"}
+    except ValueError:
+        file_archive = None
+    return jsonify({"day": day, "digest": digest, "items": raw, "pending": pending, "archive": file_archive})
 
 
 @app.post("/api/todo")
 def api_todo():
     j = request.get_json(force=True)
     store.set_todo_done(j["key"], bool(j.get("done")))
+    from .archive import refresh_todo
+    refresh_todo(j["key"])
     return jsonify({"ok": True})
 
 
@@ -103,6 +111,7 @@ def api_status():
         "daemon_tick": store.kv_get("daemon_tick"), "phone": store.kv_get("phone"),
         "phone_last": store.kv_get("phone_last"), "paired": bool(s["relay"].get("key")),
         "inbox": str(config.INBOX), "llm": check(s) if request.args.get("llm") else None,
+        "archive": str(archive.root(s)),
         "events": store.recent_events(25), "imports": store.recent_imports(8),
         "timezone": s.get("timezone"), "schedule": s.get("schedule"),
     })
@@ -194,6 +203,42 @@ def api_settings_save():
         patch["relay"] = {"server": j["relay"]["server"].rstrip("/")}
     config.update_settings(patch)
     return api_settings()
+
+
+@app.post("/api/archive/<day>")
+def api_archive(day):
+    from .archive import export_day
+    try:
+        folder = export_day(day, _settings())
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except OSError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+    if folder is None:
+        return jsonify({"ok": False, "msg": "저장할 보고서가 없거나 파일 보관이 꺼져 있어요"}), 404
+    return jsonify({"ok": True, "path": str(folder), "url": f"/reports/{day}/보고서.html"})
+
+
+@app.get("/reports/<day>/<path:filename>")
+def report_file(day, filename):
+    from .archive import day_dir
+    if not _settings().get("archive", {}).get("enabled", True) or any(p.startswith(".") for p in Path(filename).parts):
+        abort(404)
+    try:
+        folder = day_dir(day)
+        resolved = (folder / filename).resolve()
+        if not resolved.is_relative_to(folder.resolve()):
+            abort(404)
+        try:
+            manifest = json.loads((folder / archive.MANIFEST).read_text())
+        except (OSError, ValueError):
+            abort(404)
+        if filename not in manifest.get("files", {}):
+            abort(404)
+    except ValueError:
+        abort(404)
+    download = filename.startswith("원본/") and Path(filename).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif"}
+    return send_from_directory(folder, filename, as_attachment=download)
 
 
 @app.get("/api/card/<day>/<style>.png")

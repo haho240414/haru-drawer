@@ -190,6 +190,18 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
                 dg = build_digest(day, settings, force=force_digest or day in upgrade, log=log)
                 if dg:
                     built.append(day)
+            from .archive import export_day
+            exported, export_errors = [], []
+            for day in built:
+                try:
+                    folder = export_day(day, settings)
+                    if folder:
+                        exported.append(day)
+                        log(f"  노트북에 저장: {folder}")
+                except (OSError, ValueError) as e:
+                    export_errors.append(day)
+                    log(f"보고서 파일 저장 실패: {e}")
+                    store.log_event("error", f"{day} 파일 저장 실패: {str(e)[:160]}")
             published = []
             if publish:
                 # 폰에는 가장 최근 날(보통 오늘)만 — 예전 날 보고서는 폰이 요청하면 보낸다
@@ -202,6 +214,7 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
                         log(f"폰으로 보내기 실패: {e}")
                         store.log_event("error", f"보내기 실패: {str(e)[:160]}")
             result = {"ok": True, "days": sorted(target), "built": built, "published": published,
+                      "exported": exported, "export_errors": export_errors,
                       "analysis": stats, "sec": round(time.time() - t0, 1), "at": iso(now())}
             store.kv_set("last_run", result)
             store.log_event("run", f"정리 완료: 보고서 {len(built)}개, {result['sec']}초")

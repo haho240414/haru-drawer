@@ -48,10 +48,15 @@ def scan(settings: dict, log=print) -> list[str]:
         return []
     done_dir = inbox / "처리됨"
     done_dir.mkdir(exist_ok=True)
+    from .archive import root
+    reports = root(settings).resolve()
     seen = set(store.kv_get("inbox_seen", []))
     days: set[str] = set()
     for p in sorted(inbox.iterdir()):
         if p.name.startswith(".") or p == done_dir or p.name == "처리됨":
+            continue
+        # 우리가 생성한 보고서·분류 폴더를 새 카톡 원문으로 다시 가져오지 않는다.
+        if reports.is_relative_to(p.resolve()):
             continue
         if p.is_file() and p.suffix.lower() in (".crdownload", ".part", ".download"):
             continue
