@@ -54,7 +54,7 @@ DIGEST_SCHEMA = {"type": "object", "properties": {
     "tomorrow": {"type": "string"},
 }}
 
-ITEM_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자는 카카오톡 '나에게 보내기'(나와의 채팅)로 링크·캡처·메모를 자기 자신에게 보내 모아 둔다.
+ITEM_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자는 카카오톡 '나에게 보내기'(나와의 채팅), 앱 공유, 유튜브 재생목록에 링크·캡처·메모·영상을 모아 둔다.
 아래는 그렇게 모은 항목들이다. 각 항목이 무엇인지, 사용자가 왜 보냈을지 분석하라.
 사용자 소개: {profile}
 
@@ -75,6 +75,9 @@ ITEM_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자는 카�
 - 캡처 이미지는 화면 속 글자를 읽어 무엇인지 파악한다 (상품·매물·기사·대화·일정·코드·결제 등). 이미지 번호와 항목 번호의 짝을 지킨다.
 - 사용자가 직접 쓴 메모는 메모 내용을 정리한다 (할 일이면 intent '할 일'). 장소·담당자·기관 이름을 줄이거나 바꾸지 않는다. '관리사무소'를 '관사'처럼 다른 단어로 바꾸지 않는다.
 - 원본이 없는 사진·동영상 자리표시("사진", "동영상")는 '내용 확인 불가'로 짧게 처리하고 importance 1.
+- 유튜브 재생목록은 저장한 관심사를 나타낸다. 저장했다고 시청했다고 쓰지 않는다. 재생목록의 경제·AI·휴식 주제를 참고한다.
+- 자막 일부만 있으면 그 범위만 요약한다. 자막이 없으면 제목·설명만 정리하고 summary 끝에 "(자막 확인 불가·제목/설명 기준)"을 붙인다. 제목만 보고 영상 내용·결론·수치를 추측하지 않는다.
+- 경제 영상의 주장과 전망은 제작자의 설명으로 표현하며 검증된 사실처럼 단정하지 않는다. 휴식·음악 영상에 숙제나 생산성 할 일을 만들지 않는다.
 - 문장은 간결한 한국어 평서문·명사형. 존댓말·감탄·이모지 금지.
 
 카테고리 목록: {categories}
@@ -83,7 +86,7 @@ ITEM_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자는 카�
 {items}
 """
 
-DIGEST_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자가 {label}에 카톡 '나에게 보내기'로 모은 {n}개 항목의 분석 결과로 하루 보고서를 쓴다.
+DIGEST_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자가 {label}에 카톡·앱 공유·유튜브 재생목록으로 모은 {n}개 항목의 분석 결과로 하루 보고서를 쓴다.
 사용자 소개: {profile}
 최근 흐름: {trend}
 
@@ -97,7 +100,7 @@ DIGEST_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자가 {l
 - lock: 잠금화면 카드 — title(16자 이내, 큰 글씨) + lines(최대 3줄, 각 20자 이내, 중요한 것부터, 명사형)
 - tomorrow: 내일 아침 다시 볼 한 가지 (40자 이내)
 
-규칙: 분석 결과에 있는 사실만 쓴다. 숫자·고유명사는 그대로. 간결한 평서문·명사형, 이모지 금지.
+규칙: 분석 결과에 있는 사실만 쓴다. 숫자·고유명사는 그대로. 저장한 영상을 시청했다고 표현하지 않는다. 자막 미확보 항목은 제목·설명 정리라는 한계를 유지한다. 휴식 영상에 할 일을 만들지 않는다. 간결한 평서문·명사형, 이모지 금지.
 
 항목 분석 결과:
 {items}
@@ -134,6 +137,27 @@ def shorten(text: str, n: int) -> str:
     return cut.rstrip(" -:|·,") + "…"
 
 
+def youtube_context(it: dict, analysis: dict) -> dict:
+    """재사용한 분석에도 현재 저장 목록·자막 확보 범위를 반영한다."""
+    meta = it.get("meta") or {}
+    if it.get("source") != "youtube":
+        return analysis
+    from .youtube import TOPICS
+    result = dict(analysis)
+    topics = [m.get("topic") for m in meta.get("youtube_playlists", [])]
+    # 휴식은 공부·업무 할 일로 바꾸지 않는다.
+    topic = "휴식" if "휴식" in topics else next((t for t in topics if t in TOPICS and t != "기타"), None)
+    if topic:
+        result["category"] = TOPICS[topic]
+    if topic == "휴식":
+        result.update(actions=[], intent="나중에 읽기", importance=min(2, result.get("importance", 2)))
+    if not meta.get("transcript"):
+        suffix = "(자막 확인 불가·제목/설명 기준)"
+        if suffix not in result.get("summary", ""):
+            result["summary"] = (result.get("summary") or "제목과 설명만 확보함") + " " + suffix
+    return result
+
+
 def heuristic_item(it: dict, categories: list[str]) -> dict:
     meta = it.get("meta") or {}
     blob = " ".join(str(x) for x in (it.get("text"), meta.get("title"), meta.get("description"), meta.get("channel")) if x)
@@ -159,17 +183,18 @@ def heuristic_item(it: dict, categories: list[str]) -> dict:
         intent = "구매 검토"
     if meta.get("placeholder"):
         summary = f"{KIND_KO.get(kind, kind)} (원본이 없어 내용 확인 불가)"
-    return {"category": cat, "title": shorten(title, 28), "summary": shorten(summary, 300), "key_points": [],
+    return youtube_context(it, {"category": cat, "title": shorten(title, 28), "summary": shorten(summary, 300), "key_points": [],
             "intent": intent, "actions": [shorten(first_line, 25)] if intent == "할 일" else [], "tags": [],
             "importance": 3 if intent == "할 일" else (1 if meta.get("placeholder") else 2),
-            "lock_line": shorten(title, 18), "source": "heuristic"}
+            "lock_line": shorten(title, 18), "source": "heuristic"})
 
 
 # ---------- AI 분석 ----------
 def _describe(ref: str, it: dict, img_no: int | None) -> str:
     meta = it.get("meta") or {}
     t = parse_iso(it["ts"]).strftime("%H:%M")
-    lines = [f"[{ref}] 종류={KIND_KO.get(it['kind'], it['kind'])} 보낸시각={t} 출처={'카톡' if it['source'] == 'kakao' else '폰 공유'}"]
+    source = {"kakao": "카톡", "share": "폰 공유", "inbox": "받은편지함", "youtube": "유튜브 저장 목록"}.get(it["source"], it["source"])
+    lines = [f"[{ref}] 종류={KIND_KO.get(it['kind'], it['kind'])} 저장시각={t} 출처={source}"]
     text = (it.get("text") or "").strip()
     if text:
         lines.append("    메시지: " + text[:700].replace("\n", " ⏎ "))
@@ -187,7 +212,7 @@ def _describe(ref: str, it: dict, img_no: int | None) -> str:
 
 def analyze_batch(items: list[dict], settings: dict) -> dict[str, dict]:
     """항목 묶음을 AI 로 분석. 결과: item id → 분석 dict."""
-    cats = settings["categories"]
+    cats = list(dict.fromkeys(settings["categories"] + ["휴식"]))
     refs: dict[str, dict] = {}
     blocks, images = [], []
     with tempfile.TemporaryDirectory(prefix="haru-img-") as td:
@@ -218,7 +243,7 @@ def analyze_batch(items: list[dict], settings: dict) -> dict[str, dict]:
         row = {k: v for k, v in row.items() if k != "ref"}
         row["importance"] = max(1, min(5, int(row.get("importance") or 2)))
         row["source"] = llm_info.get("backend", "ai")
-        out[it["id"]] = row
+        out[it["id"]] = youtube_context(it, row)
     return out
 
 
@@ -236,7 +261,7 @@ def analyze_items(items: list[dict], settings: dict, log=print) -> dict:
         if it.get("url_key"):
             prev = store.find_analyzed_by_url(it["url_key"], it["id"])
             if prev and prev.get("analysis") and (prev["analysis"].get("source") != "heuristic" or not llm.available(settings)):
-                a = dict(prev["analysis"], reused_from=prev["id"])
+                a = youtube_context(it, dict(prev["analysis"], reused_from=prev["id"]))
                 store.update_item(it["id"], analysis=a, status="analyzed")
                 stats["reused"] += 1
                 continue
@@ -313,7 +338,11 @@ def _item_view(it: dict) -> dict:
         "source": it["source"], "url": it.get("url"), "site": meta.get("site"), "site_kind": meta.get("site_kind"),
         "text": (it.get("text") or "")[:500], "media": it.get("media"), "thumb": thumb,
         "link_title": meta.get("title"), "image": meta.get("image"), "duration": meta.get("duration"),
-        "channel": meta.get("channel"), "note": meta.get("note") or meta.get("error"),
+        "channel": meta.get("channel"), "note": ((meta.get("note") or meta.get("error") or "") +
+              (" · 개별 저장일 확인 불가·처음 발견한 날짜 기준" if meta.get("date_basis") == "first_observed_at" else "")),
+        "youtube_playlists": meta.get("youtube_playlists", []), "saved_at": meta.get("saved_at"),
+        "date_basis": meta.get("date_basis"), "observed_at": meta.get("observed_at"),
+        "content_basis": meta.get("content_basis") or ("metadata_only" if it["source"] == "youtube" else None),
         "category": a.get("category", "기타"), "title": a.get("title") or meta.get("title") or "",
         "summary": a.get("summary", ""), "key_points": a.get("key_points", []), "intent": a.get("intent", ""),
         "actions": a.get("actions", []), "tags": a.get("tags", []), "importance": a.get("importance", 2),
@@ -381,6 +410,9 @@ def build_digest(day: str, settings: dict, force: bool = False, log=print) -> di
     todos = []
     for t in data.get("todos", []):
         key = hashlib.sha1(f"{day}|{t.get('text', '')}".encode()).hexdigest()[:12]
+        linked = next((v for v in views if v["id"] == conv(t.get("ref", ""))), {})
+        if linked.get("source") == "youtube" and linked.get("category") == "휴식":
+            continue
         todos.append({"text": t.get("text", ""), "id": conv(t.get("ref", "")), "when": t.get("when", "이번 주"),
                       "key": key, "done": key in done})
     digest = {

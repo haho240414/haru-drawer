@@ -5,11 +5,12 @@ import base64
 import io
 import json
 import threading
+from urllib.parse import urlsplit
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_from_directory, redirect
 
-from . import archive, config, inbox, store
+from . import archive, config, inbox, store, youtube
 from .lockcard import card_from_digest, render
 from .pipeline import Busy, latest_day, publish_day, run
 from .relay import new_pairing, pairing_code
@@ -20,6 +21,20 @@ app = Flask(__name__, static_folder=None)
 _run_thread: threading.Thread | None = None
 _run_log: list[str] = []
 
+
+@app.before_request
+def _youtube_local_access():
+    if not request.path.startswith("/api/youtube"):
+        return
+    host = urlsplit(request.host_url)
+    if request.remote_addr not in ("127.0.0.1", "::1") or host.hostname not in ("localhost", "127.0.0.1"):
+        abort(403)
+    if request.method == "POST":
+        origin = request.headers.get("Origin")
+        if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+            abort(403)
+        if not request.is_json:
+            abort(415)
 
 def _settings() -> dict:
     return config.load_settings()
@@ -203,6 +218,65 @@ def api_settings_save():
         patch["relay"] = {"server": j["relay"]["server"].rstrip("/")}
     config.update_settings(patch)
     return api_settings()
+
+
+# ---------- 노트북에서 YouTube 읽기 전용 연결 ----------
+@app.get("/api/youtube")
+def api_youtube():
+    from .youtube import status
+    return jsonify(status(_settings()))
+
+
+@app.errorhandler(youtube.YouTubeError)
+def _youtube_error(error):
+    return jsonify({"ok": False, "msg": str(error)}), 400
+
+
+@app.post("/api/youtube/client")
+def api_youtube_client():
+    from .youtube import configure_client
+    configure_client(request.get_json())
+    return jsonify({"ok": True})
+
+
+@app.post("/api/youtube/connect")
+def api_youtube_connect():
+    from .youtube import begin_auth
+    port = urlsplit(request.host_url).port or 80
+    return jsonify({"url": begin_auth(port)})
+
+
+@app.get("/api/youtube/oauth/callback")
+def api_youtube_callback():
+    from .youtube import finish_auth, YouTubeError
+    import html
+    try:
+        finish_auth(request.args.get("state", ""), request.args.get("code", ""), bool(request.args.get("error")))
+    except YouTubeError as e:
+        return (f'<meta charset="utf-8"><p>{html.escape(str(e))}</p><a href="/#/youtube">하루서랍으로 돌아가기</a>', 400,
+                {"Referrer-Policy": "no-referrer", "Cache-Control": "no-store"})
+    return redirect("/#/youtube", code=303)
+
+
+@app.post("/api/youtube/disconnect")
+def api_youtube_disconnect():
+    from .youtube import disconnect
+    disconnect()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/youtube/playlists")
+def api_youtube_playlists():
+    from .youtube import list_playlists
+    return jsonify({"playlists": list_playlists()})
+
+
+@app.post("/api/youtube/selection")
+def api_youtube_selection():
+    from .youtube import save_selection
+    j = request.get_json()
+    save_selection(j.get("playlists", []), bool(j.get("enabled")))
+    return api_youtube()
 
 
 @app.post("/api/archive/<day>")

@@ -48,9 +48,11 @@ def enrich_pending(log=print) -> list[str]:
                     if prev and prev.get("meta", {}).get("title"):
                         meta = {**prev["meta"], **{k: v for k, v in meta.items() if v}}
                     else:
-                        meta.update(enrich_link(it["url"]))
+                        fetched = enrich_link(it["url"])
+                        meta.update({k: v for k, v in fetched.items() if v} if it["source"] == "youtube" else fetched)
                 else:
-                    meta.update(enrich_link(it["url"]))
+                    fetched = enrich_link(it["url"])
+                    meta.update({k: v for k, v in fetched.items() if v} if it["source"] == "youtube" else fetched)
             elif it["kind"] == "file" and it.get("media", "").lower().endswith(".pdf"):
                 meta["pdf_text"] = pdf_text(config.MEDIA / it["media"])
             elif it["kind"] == "image" and it.get("media"):
@@ -170,7 +172,10 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
         t0 = time.time()
         store.kv_set("run_state", {"running": True, "started": iso(now())})
         try:
+            from .youtube import sync
+            youtube = sync(settings, log)
             touched = set(enrich_pending(log))
+            touched |= set(youtube["days"])
             upgrade = requeue_heuristic(settings, log)
             touched |= upgrade
             pending = store.items_by_status(("enriched",))
@@ -215,7 +220,7 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
                         store.log_event("error", f"보내기 실패: {str(e)[:160]}")
             result = {"ok": True, "days": sorted(target), "built": built, "published": published,
                       "exported": exported, "export_errors": export_errors,
-                      "analysis": stats, "sec": round(time.time() - t0, 1), "at": iso(now())}
+                      "analysis": stats, "youtube": youtube, "sec": round(time.time() - t0, 1), "at": iso(now())}
             store.kv_set("last_run", result)
             store.log_event("run", f"정리 완료: 보고서 {len(built)}개, {result['sec']}초")
             return result

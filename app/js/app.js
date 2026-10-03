@@ -1,5 +1,6 @@
 // 하루서랍 화면 — 맥 대시보드(브라우저)와 폰 앱(Capacitor)이 같은 코드를 쓴다.
 import { Source, isNative } from "./source.js";
+import { showYoutube } from "./youtube.js";
 import { renderReport, cssId } from "./report.js";
 import { esc } from "./common.js";
 
@@ -275,6 +276,7 @@ async function showSettings() {
   const s = await Source.settings();
   const st = await Source.status(true).catch(() => ({}));
   $view.innerHTML = `<h2 style="margin:20px 0 6px">설정</h2>
+    <div class="card"><h2>유튜브 저장 영상</h2><p class="meta">경제·AI·휴식 재생목록의 새 저장분을 하루 보고서에 넣어요.</p><a class="btn small" href="#/youtube">유튜브 연결·수집 설정</a></div>
     <div class="card">
       <div class="field"><label>정리 시각 (쉼표로)</label><input type="text" id="schedule" value="${esc((s.schedule || []).join(", "))}">
         <div class="hint">이 시각마다 새로 모은 걸 정리해 폰으로 보내요. 폰에서 공유하면 잠잠해진 뒤(3분) 바로 정리해요 (최소 ${s.min_run_gap_min || 20}분 간격).</div></div>
@@ -380,6 +382,7 @@ async function route() {
   if (h === "add") return showAdd();
   if (h === "link") return showLink();
   if (h === "settings") return showSettings();
+  if (h === "youtube" && !isNative) return showYoutube($view, toast, runNow);
   return showDay(null);
 }
 window.addEventListener("hashchange", route);

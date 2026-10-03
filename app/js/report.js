@@ -99,6 +99,7 @@ function itemHtml(it, ctx) {
         ${it.intent ? `<span>· ${esc(it.intent)}</span>` : ""}
         <span class="imp" title="중요도">${stars(it.importance)}</span>
         ${it.source === "share" ? `<span>· 폰 공유</span>` : ""}</div>
+      ${it.source === "youtube" ? `<div class="meta">유튜브 ${it.date_basis === "first_observed_at" ? "처음 발견한 날짜 기준" : "저장일 기준"} · ${esc((it.youtube_playlists || []).map(p => p.name).join(" · "))}</div>` : ""}
       <div class="title">${esc(it.title || KIND_LABEL[it.kind])}</div>
       <p class="sum">${esc(it.summary)}</p>
       ${it.key_points?.length ? `<ul class="kp">${it.key_points.map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : ""}

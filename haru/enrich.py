@@ -144,6 +144,12 @@ def fetch_youtube(url: str) -> dict:
                            image=j.get("thumbnail_url", ""))
         except Exception:
             pass
+    if out.get("transcript"):
+        out["content_basis"] = "partial_transcript"
+        out["note"] = "자막 일부와 제목·설명 기준으로 정리했어요. 전체 영상 요약은 아니에요"
+    else:
+        out["content_basis"] = "metadata_only"
+        out["note"] = "자막을 확보하지 못해 제목·설명 기준으로 정리했어요"
     return out
 
 
@@ -181,7 +187,8 @@ def enrich_link(url: str) -> dict:
 def summarize_meta_for_prompt(meta: dict) -> str:
     """분석 프롬프트에 넣을 링크 정보 (길이 제한)."""
     keep = {k: meta.get(k) for k in ("site", "title", "channel", "duration", "upload_date", "description",
-                                     "chapters", "published", "error", "note") if meta.get(k)}
+                                     "chapters", "published", "error", "note", "content_basis",
+                                     "youtube_playlists", "saved_at") if meta.get(k)}
     body = meta.get("transcript") or meta.get("text") or ""
     if body:
         keep["본문(일부)"] = body[:2500]
