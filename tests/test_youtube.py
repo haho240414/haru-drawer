@@ -252,6 +252,46 @@ def test_korean_22_schedule_runs_once_across_la_dst(home, monkeypatch):
     assert not youtube.browser_due(cfg)["due"]
 
 
+def test_korean_midnight_schedule_runs_once_across_la_dst(home, monkeypatch):
+    from zoneinfo import ZoneInfo
+    cfg = config.update_settings({"youtube": {"mode": "browser", "enabled": True, "report_hour": 0}})
+    for month in (10, 11):
+        slots = []
+        due_at = None
+        for hour in (7, 8):
+            local = datetime(2026, month, 3, hour, tzinfo=ZoneInfo("America/Los_Angeles"))
+            monkeypatch.setattr(youtube, "now", lambda local=local: local)
+            result = youtube.browser_due(cfg)
+            slots.append(result["due"])
+            if result["due"]:
+                due_at = local
+                assert result["day"] == f"2026-{month:02d}-04"
+        assert sum(slots) == 1
+        monkeypatch.setattr(youtube, "now", lambda: due_at)
+        result = youtube.browser_due(cfg)
+        youtube.browser_done(result["day"])
+        assert not youtube.browser_due(cfg)["due"]
+
+
+def test_browser_schedule_rejects_invalid_hour(home):
+    for hour in (-1, 24, "0", True):
+        with pytest.raises(youtube.YouTubeError):
+            youtube.browser_due({"youtube": {"enabled": True, "mode": "browser", "report_hour": hour}})
+
+
+def test_midnight_capture_belongs_to_the_previous_report_day(cfg, monkeypatch):
+    monkeypatch.setattr(youtube, "now", lambda: datetime.fromisoformat("2026-10-05T00:05:00+09:00"))
+    cfg["youtube"].update(mode="browser", report_hour=0, playlists=[ECON])
+    snapshot = {"source": "youtube_browser", "captured_at": "2026-10-05T00:00:00+09:00", "playlists": [
+        {"id": ECON["id"], "complete": True, "reported_total": 0, "videos": []}]}
+    assert youtube.import_browser_snapshot(snapshot, cfg)["new"] == 0
+    snapshot["captured_at"] = "2026-10-05T00:05:00+09:00"
+    snapshot["playlists"][0].update(reported_total=1, videos=[{"id": "abcdefghijk", "title": "자정 새 영상"}])
+    result = youtube.import_browser_snapshot(snapshot, cfg)
+    assert result["new"] == 1 and result["days"] == ["2026-10-04"]
+    assert store.items_for_day("2026-10-05") == []
+
+
 def test_browser_done_after_midnight_keeps_the_collected_day(home, monkeypatch, capsys):
     from haru.__main__ import main
     cfg = config.update_settings({"youtube": {"mode": "browser", "enabled": True}})

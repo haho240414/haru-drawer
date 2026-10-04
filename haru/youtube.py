@@ -314,12 +314,15 @@ def import_browser_snapshot(document: dict, settings: dict | None = None) -> dic
 
 
 def browser_due(settings: dict | None = None) -> dict:
-    """예약 확인이 LA 05/06시에 오더라도 실제 수집은 한국 22시에 한 번만."""
+    """LA의 두 확인 시각 중 설정된 한국 시각에 하루 한 번만 수집한다."""
     y = (settings or config.load_settings()).get("youtube", {})
+    hour = y.get("report_hour", 22)
+    if isinstance(hour, bool) or not isinstance(hour, int) or not 0 <= hour <= 23:
+        raise YouTubeError("유튜브 보고서 시각은 한국 시간 0~23시 정수여야 해요")
     cur = now().astimezone(ZoneInfo("Asia/Seoul"))
     day = cur.date().isoformat()
     previous = store.kv_get("youtube_browser_daily_run") or {}
-    due = y.get("mode") == "browser" and bool(y.get("enabled")) and cur.hour == 22 and previous.get("day") != day
+    due = y.get("mode") == "browser" and bool(y.get("enabled")) and cur.hour == hour and previous.get("day") != day
     return {"due": due, "day": day, "at": cur.isoformat(timespec="seconds"), "completed_today": previous.get("day") == day}
 
 
