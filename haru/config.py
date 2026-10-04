@@ -26,6 +26,7 @@ ROOT = PKG_DIR.parent
 WEB_DIR = ROOT / "app"
 
 DEFAULTS: dict = {
+    "content": {"enabled": False, "start_day": None},  # 공개 영상 기반 블로그 초안·대표 이미지, 자동 발행 없음
     # 시간대 (폰이 연결되면 폰 시간대로 자동 갱신)
     "timezone": "Asia/Seoul",
     # 새벽 4시 전까지는 '어제'로 친다 (밤늦게 보낸 것도 그날 정리에 들어가게)

@@ -35,6 +35,11 @@ def main(argv=None) -> int:
     p = sub.add_parser("pair")
     p.add_argument("--reset", action="store_true")
     sub.add_parser("status")
+    p = sub.add_parser("content", help="완성한 공개 영상 자료를 블로그 초안·대표 이미지 작업으로 연결")
+    p.add_argument("action", choices=["status", "build", "attach-image"])
+    p.add_argument("--day")
+    p.add_argument("--signature", help="이미지가 만들어진 작업의 signature")
+    p.add_argument("--file", type=Path, help="생성된 대표 이미지")
     p = sub.add_parser("transcribe", help="지정한 날짜의 YouTube 전체 음성 확보·전사 후 보고서 재작성")
     p.add_argument("--day", required=True)
     p.add_argument("--id", help="특정 항목만 처리")
@@ -45,6 +50,27 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     config.ensure_dirs()
     settings = config.load_settings()
+    if a.cmd == "content":
+        from . import content
+        if a.action != "status" and not a.day:
+            ap.error("content build/attach-image에는 --day가 필요해요")
+        if a.action == "attach-image" and (not a.file or not a.signature):
+            ap.error("attach-image에는 --file과 --signature가 필요해요")
+        try:
+            result = (content.status(a.day, settings) if a.day else
+                      {"enabled": bool(settings.get("content", {}).get("enabled")), "pending": content.pending(settings)}) if a.action == "status" else (
+                content.build(a.day, settings) if a.action == "build" else content.attach_image(a.day, a.signature, a.file, settings))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        except (ValueError, OSError, KeyError) as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        except Exception as e:
+            from .llm import LLMError
+            if not isinstance(e, LLMError):
+                raise
+            print(str(e), file=sys.stderr)
+            return 1
     if a.cmd == "transcribe":
         from .transcribe import queue_day
         from .pipeline import run, run_lock

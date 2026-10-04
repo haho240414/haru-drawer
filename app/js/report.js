@@ -101,6 +101,10 @@ export function renderReport(root, data, ctx) {
         ${data.archive?.exists ? `<a class="secondary-link" href="${esc(data.archive.url)}" target="_blank" rel="noopener">저장한 보고서 보기 ${icon("external-link")}</a>` : ""}
         <details class="path-details"><summary>${icon("chevron-right", "disclosure-icon")}저장 위치</summary><p class="meta">${esc(data.archive?.path || "")}</p></details>
       </section>` : ""}
+      ${!ctx.isNative && data.content_enabled ? `<section class="utility"><p class="eyebrow">모아둔 생각을 글로</p><h2>블로그 초안</h2>
+        ${data.content ? `<p class="meta">${esc(data.content.title)}</p><p class="meta">${data.content.outdated ? "이전 보고서로 만든 초안이에요. 새 자료 반영을 기다리고 있어요." : data.content.ready ? "글과 대표 이미지가 준비됐어요. 발행 전에 한 번 읽어보세요." : "글은 준비됐어요. 대표 이미지를 기다리고 있어요."}</p>
+          <a class="secondary-link" href="${esc(data.content.url)}" target="_blank" rel="noopener">초안 읽기 ${icon("external-link")}</a>` : '<p class="meta">새 보고서가 완성되면 공개 영상에서 글감을 골라 초안과 대표 이미지를 만듭니다.</p>'}
+      </section>` : ""}
     </aside>
   </div>`;
 }

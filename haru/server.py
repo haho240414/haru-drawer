@@ -95,7 +95,13 @@ def api_day(day):
         file_archive = {"path": str(folder), "exists": saved.is_file(), "url": f"/reports/{day}/보고서.html"}
     except ValueError:
         file_archive = None
-    return jsonify({"day": day, "digest": digest, "items": raw, "pending": pending, "archive": file_archive})
+    from . import content
+    try:
+        draft = content.status(day) if _settings().get("content", {}).get("enabled") else None
+    except (OSError, ValueError, KeyError, TypeError):
+        draft = None
+    return jsonify({"day": day, "digest": digest, "items": raw, "pending": pending, "archive": file_archive,
+                    "content_enabled": bool(_settings().get("content", {}).get("enabled")), "content": draft})
 
 
 @app.post("/api/todo")
@@ -308,7 +314,12 @@ def report_file(day, filename):
         except (OSError, ValueError):
             abort(404)
         if filename not in manifest.get("files", {}):
-            abort(404)
+            from . import content
+            try:
+                if filename not in content.allowed_files(day):
+                    abort(404)
+            except (OSError, ValueError, KeyError, TypeError):
+                abort(404)
     except ValueError:
         abort(404)
     download = filename.startswith("원본/") and Path(filename).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif"}
