@@ -28,9 +28,10 @@ def ai(home, monkeypatch):
         refs = re.findall(r"\[(A\d+)\]", prompt)
         if refs:
             return {"items": [{"ref": r, "category": "AI·테크", "title": f"{backend} 제목", "summary": "요약",
+                               "quick_summary": ["핵심 주장", "근거", "확인할 점"], "briefing": [{"heading": "설명", "body": "자료의 내용"}],
                                "key_points": [], "intent": "참고 자료", "actions": [], "tags": [], "importance": 3,
                                "lock_line": "한 줄"} for r in refs], "_llm": {"backend": backend}}
-        return {"headline": f"{backend} 헤드라인", "summary": "s", "highlights": [], "themes": [], "todos": [],
+        return {"headline": f"{backend} 헤드라인", "summary": "s", "quick_summary": ["핵심", "근거", "조건"], "highlights": [], "themes": [], "todos": [],
                 "read_later": [], "lock": {"title": "t", "lines": []}, "tomorrow": "", "_llm": {"backend": backend}}
 
     def fake_codex(prompt, schema, images=(), **kw):

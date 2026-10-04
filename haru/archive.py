@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 from . import config, store
+from .briefing import quick_html, quick_md, briefing_html, briefing_md, source_html, source_md, source_document, SOURCE_NOTICE
 
 MANIFEST = ".haru-files.json"
 
@@ -71,7 +72,7 @@ def _csv_cell(value) -> str:
 def _digest_md(digest: dict, item_files: dict[str, str]) -> str:
     lines = [f"# {_md(digest.get('headline') or digest['day'])}", "",
              f"{digest.get('label', digest['day'])} · 보고서 v{digest['version']}", "",
-             _md(digest.get("summary")), "", "## 핵심 내용", ""]
+             *quick_md(digest, _md), "## 오늘의 브리핑", "", _md(digest.get("summary")), "", "## 핵심 내용", ""]
     items = {i["id"]: i for i in digest.get("items", [])}
     for row in digest.get("highlights", []):
         item = items.get(row.get("id"), {})
@@ -93,7 +94,7 @@ def _digest_md(digest: dict, item_files: dict[str, str]) -> str:
     for item in digest.get("items", []):
         lines += [f"### {_md(item.get('title'))}", "",
                   f"{_md(item.get('category'))} · [분류 파일](<{item_files[item['id']]}>)", "",
-                  _md(item.get("summary")), ""]
+                  *quick_md(item, _md, 4), "#### 상세 브리핑", "", *briefing_md(item, _md, 5)]
         lines += [f"- {_md(point)}" for point in item.get("key_points", [])]
         if item.get("note"):
             lines += ["", _md(item["note"])]
@@ -101,10 +102,13 @@ def _digest_md(digest: dict, item_files: dict[str, str]) -> str:
     if not items:
         lines.append("보고서에 남은 항목이 없습니다.")
     lines += ["", "## 다음에 할 것", "", _md(digest.get("tomorrow")), ""]
+    if any(i.get("transcript_sections") for i in items.values()):
+        lines += ["[원본 내용 정리 자료](<원본내용정리.md>)", ""]
     return "\n".join(lines)
 
 
-def _report_html(digest: dict, assets: dict[str, str], transcripts: dict[str, str] | None = None) -> str:
+def _report_html(digest: dict, assets: dict[str, str], transcripts: dict[str, str] | None = None,
+                 sources: dict[str, str] | None = None) -> str:
     esc = lambda v: html.escape(str(v or ""), quote=True)
     items = {i["id"]: i for i in digest.get("items", [])}
     highlights = "".join(f"<li><strong>{esc(items.get(h.get('id'), {}).get('title'))}</strong><p>{esc(h.get('why'))}</p></li>"
@@ -134,18 +138,20 @@ def _report_html(digest: dict, assets: dict[str, str], transcripts: dict[str, st
                      if item.get("kind") == "image" else f'<a href="{src}">첨부 파일 열기</a>')
         points = "".join(f"<li>{esc(p)}</li>" for p in item.get("key_points", []))
         note = f'<p class="meta">{esc(item["note"])}</p>' if item.get("note") else ""
-        sections = "".join(f'<h4>구간 {esc(s.get("part"))}/{esc(s.get("total"))}</h4>'
-                           f'<p>{esc(s.get("summary"))}</p><ul>' +
-                           "".join(f'<li>{esc(p)}</li>' for p in s.get("points", [])) + '</ul>' +
-                           "".join(f'<p class="meta">확인 필요: {esc(p)}</p>' for p in s.get("uncertain", []))
-                           for s in item.get("transcript_sections", []))
-        details = f'<details><summary>영상 전체 구간별 정리</summary>{sections}</details>' if sections else ""
+        anchor = (sources or {}).get(item["id"])
+        details = (f'<p><a href="원본내용정리.html#{anchor}">원본 순서대로 정리한 전체 내용 읽기 →</a></p>' if anchor else
+                   f'<details><summary>영상 전체 구간별 정리</summary>{source_html(item)}</details>' if item.get("transcript_sections") else '')
         transcript = (transcripts or {}).get(item["id"])
         full_link = f' · <a href="{quote(transcript)}" download>시간 표시 전문 받기</a>' if transcript else ""
+        brief = (f'{quick_html(item)}<details class="briefing"><summary>상세 브리핑</summary>{briefing_html(item)}'
+                 f'<h4>기억할 포인트</h4><ul>{points}</ul></details>' if item.get('quick_summary') or item.get('briefing') else
+                 f'<p>{esc(item.get("summary"))}</p><ul>{points}</ul>')
         cards.append(f'<article><span class="tag">{esc(item.get("category"))}</span><h3>{esc(item.get("title"))}</h3>'
-                     f'<p>{esc(item.get("summary"))}</p><ul>{points}</ul>{details}{media}{note}{link}{full_link}</article>')
+                     f'{brief}{details}{media}{note}{link}{full_link}</article>')
     content = "".join(cards) or "<p>보고서에 남은 항목이 없습니다.</p>"
     backend = "AI 분석" if digest.get("llm", {}).get("backend") not in (None, "heuristic", "fake") else "규칙 기반 정리"
+    opening = (f'{quick_html(digest)}<details><summary>오늘의 상세 브리핑</summary><p>{esc(digest.get("summary"))}</p></details>'
+               if digest.get('quick_summary') else f'<p>{esc(digest.get("summary"))}</p>')
     return f'''<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' file:; base-uri 'none'; form-action 'none'">
@@ -159,11 +165,12 @@ h2{{font-size:20px;margin:0 0 16px}}h3{{font-size:16px;margin:12px 0 8px}}p{{whi
 article{{border-top:1px solid #e2e6eb;padding:24px 0;min-width:0}}article:first-child{{border-top:0;padding-top:0}}a{{color:#3e6e8b;overflow-wrap:anywhere;text-underline-offset:4px}}
 .tag{{font-size:12px;padding:4px 9px;border-radius:4px;background:#f4f5f7;color:#525c68}}img{{max-width:100%;max-height:340px;object-fit:contain;border-radius:5px}}
 nav{{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px;font-size:13px}}footer{{margin-top:28px;padding-top:8px}}:focus-visible{{outline:2px solid #3e6e8b;outline-offset:4px}}
+summary{{cursor:pointer;padding:12px 0;color:#3e6e8b;font-weight:600}}.quick h4{{font-size:13px;color:#66707c;margin:16px 0 8px}}.quick ol{{margin:0 0 20px}}.quick li{{padding:4px 0}}details h4{{margin:24px 0 8px;font-size:16px}}details p{{font-size:15px}}
 @media(max-width:600px){{main{{padding:24px 20px 60px}}}}
 @media print{{body{{background:white}}main{{padding:0}}article{{break-inside:avoid}}nav{{display:none}}}}
 </style></head><body><main><header><div class="brand">하루서랍</div>
 <p class="meta">{esc(digest.get('label', digest['day']))} · {len(items)}개 자료 · 보고서 v{digest['version']} · {backend}</p>
-<h1>{esc(digest.get('headline'))}</h1><p>{esc(digest.get('summary'))}</p>
+<h1>{esc(digest.get('headline'))}</h1>{opening}
 <nav><a href="보고서.md">보고서 Markdown</a><a href="할일.md">할 일</a><a href="링크.csv">링크 목록</a></nav></header>
 <section><h2>오늘의 핵심</h2><ol>{highlights}</ol></section>
 <section><h2>할 일</h2><ul class="checklist">{todos}</ul></section>
@@ -214,7 +221,8 @@ def export_day(day: str, settings: dict | None = None) -> Path | None:
         for todo in digest.get("todos", []):
             todo["done"] = todo.get("key") in done
         files: dict[str, bytes] = {}
-        item_files, assets, transcripts = {}, {}, {}
+        item_files, assets, transcripts, sources = {}, {}, {}, {}
+        srts = set()
         for item in digest.get("items", []):
             item_id = item["id"]
             ident = hashlib.sha256(item_id.encode()).hexdigest()[:16]
@@ -231,7 +239,7 @@ def export_day(day: str, settings: dict | None = None) -> Path | None:
                     files[asset] = original.read_bytes()
                     assets[item_id] = asset
             lines = [f"# {_md(item.get('title'))}", "", f"{_md(item.get('category'))} · {_md(item.get('time'))}", "",
-                     "## 분석", "", _md(item.get("summary")), ""]
+                     *quick_md(item, _md), "## 상세 브리핑", "", *briefing_md(item, _md)]
             lines += [f"- {_md(p)}" for p in item.get("key_points", [])]
             lines += ["", f"보관 의도: {_md(item.get('intent'))}", "", "## 할 일 후보", ""]
             lines += [f"- {_md(action)}" for action in item.get("actions", [])]
@@ -250,15 +258,21 @@ def export_day(day: str, settings: dict | None = None) -> Path | None:
                 if meta.get("transcript_segments"):
                     from .transcribe import srt
                     files[transcript_path[:-4] + ".srt"] = srt(meta["transcript_segments"]).encode()
-                for section in item.get("transcript_sections", []):
-                    lines += [f"### 구간 {section['part']}/{section['total']}", "", _md(section.get("summary")), ""]
-                    lines += [f"- {_md(p)}" for p in section.get("points", [])]
-                    lines += [f"- 확인 필요: {_md(p)}" for p in section.get("uncertain", [])]
-                    lines += [""]
+                    srts.add(item_id)
+                if item.get("transcript_sections"):
+                    sources[item_id] = f"source-{ident}"
+                    lines += ["## 원본 내용 정리", "", SOURCE_NOTICE, "", *source_md(item, _md)]
             files[relative] = "\n".join(lines).encode()
+        if sources:
+            files["원본내용정리.html"] = source_document(digest, transcripts, sources, srts).encode()
+            source_lines = ["# 원본 내용 정리", "", SOURCE_NOTICE, "", "[요약과 상세 브리핑](<보고서.md>)", ""]
+            for item in digest.get("items", []):
+                if item["id"] in sources:
+                    source_lines += [f"## {_md(item.get('title'))}", "", *source_md(item, _md)]
+            files["원본내용정리.md"] = "\n".join(source_lines).encode()
         report = _digest_md(digest, item_files)
         files["보고서.md"] = report.encode()
-        files["보고서.html"] = _report_html(digest, assets, transcripts).encode()
+        files["보고서.html"] = _report_html(digest, assets, transcripts, sources).encode()
         files["할일.md"] = ("# 할 일\n\n" + "\n".join(
             f"- [{'x' if t.get('done') else ' '}] {_md(t.get('text'))} ({_md(t.get('when'))})" for t in digest.get("todos", [])) + "\n").encode()
         files["보고서.json"] = json.dumps(digest, ensure_ascii=False, indent=2).encode()

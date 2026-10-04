@@ -20,7 +20,11 @@ from .timeutil import day_label, iso, now, parse_iso, shift_day
 
 INTENTS = ["나중에 읽기", "할 일", "구매 검토", "아이디어", "참고 자료", "일정", "기록", "기타"]
 KIND_KO = {"link": "링크", "image": "캡처·사진", "text": "메모", "video": "동영상", "file": "파일", "audio": "음성"}
-SUMMARY_VERSION = 2
+SUMMARY_VERSION = 3
+
+QUICK_SCHEMA = {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 3}
+BRIEFING_SCHEMA = {"type": "array", "items": {"type": "object", "properties": {
+    "heading": {"type": "string"}, "body": {"type": "string"}}}}
 
 
 def item_schema(categories: list[str]) -> dict:
@@ -29,6 +33,8 @@ def item_schema(categories: list[str]) -> dict:
         "category": {"type": "string", "enum": categories},
         "title": {"type": "string"},
         "summary": {"type": "string"},
+        "quick_summary": QUICK_SCHEMA,
+        "briefing": BRIEFING_SCHEMA,
         "key_points": {"type": "array", "items": {"type": "string"}},
         "intent": {"type": "string", "enum": INTENTS},
         "actions": {"type": "array", "items": {"type": "string"}},
@@ -41,6 +47,7 @@ def item_schema(categories: list[str]) -> dict:
 DIGEST_SCHEMA = {"type": "object", "properties": {
     "headline": {"type": "string"},
     "summary": {"type": "string"},
+    "quick_summary": QUICK_SCHEMA,
     "highlights": {"type": "array", "items": {"type": "object", "properties": {
         "ref": {"type": "string"}, "why": {"type": "string"}}}},
     "themes": {"type": "array", "items": {"type": "object", "properties": {
@@ -64,6 +71,8 @@ ITEM_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자는 카�
 - category: 정해진 목록 중 하나
 - title: 무엇인지 바로 알 수 있는 짧은 제목 (28자 이내, 사이트 이름·광고 문구·이모지 빼고 핵심만)
 - summary: 자료를 다시 열지 않아도 내용을 이해할 수 있는 상세 요약. 원문이 충분하면 6~10문장을 2~3단락으로 쓰고 단락 사이에 빈 줄을 넣는다. 먼저 주제·핵심 주장, 이어서 주장에 대한 이유·작동 방식·수치·사례, 마지막으로 사용자에게 참고할 점과 확인할 한계를 설명한다. 원문에 실제로 있는 내용만 쓰며 가격·날짜·수치·고유명사는 살린다. 사용자를 위한 해석은 '참고할 점'으로 구분하고 원문의 주장과 섞지 않는다.
+- quick_summary: 바로 읽고 판단할 수 있는 정확히 3개 문장. 첫 줄은 핵심 결론·주제, 둘째 줄은 가장 중요한 근거·수치·사례, 셋째 줄은 참고할 점·조건·확인할 한계. 각 줄은 독립적으로 이해되는 45~110자 문장으로, 제목이나 키워드만 나열하지 않는다. 정보가 적으면 부족한 범위를 명시하며 문장 수를 맞추려고 사실을 만들지 않는다. 숫자가 의심스러우면 3줄에서도 확정하지 않는다.
+- briefing: 시간을 내어 읽을 전문적인 비서 브리핑. heading/body로 구성한 4~7개 소주제이며, 원문이 충분하면 전체 15~25문장 이상으로 설명한다. '무엇을 말하나', 배경과 논리, 근거·수치·구체적 사례, 조건·반론·결론을 자료에 맞는 자연스러운 소제목으로 구성한다. 각 body는 1~3단락이며 빈 줄로 구분한다. 마지막은 '참고할 점과 확인할 한계'로 원문의 주장과 비서의 해석을 명확히 구분한다. 여행 영상은 방문 순서·메뉴·가격·추천 조건, 가계 영상은 수입·비용·항목 차이, AI 영상은 기능·이용 조건·비용·대안을 구체적으로 설명한다. 자료별 차이를 살리고 빈 양식을 채우지 않는다. 광고·반복을 핵심으로 삼지 않되 원문 내용 정리에는 식별한다. 원문이 부족하면 확인된 내용만 짧게 쓴다.
 - key_points: 원문이 충분하면 기억할 포인트 4~7개 (각 160자 이내). 단어만 나열하지 말고 주장과 이유, 수치·단위, 구체적인 사례·날짜, 확인할 조건을 담은 문장으로 쓴다. 원문 정보가 적으면 확인 가능한 포인트만 쓴다.
 - intent: 왜 보냈을지 — {intents} 중 하나
 - actions: 사용자가 실제로 할 만한 다음 행동 0~2개 (각 25자 이내, 구체적으로). 없으면 빈 배열.
@@ -96,6 +105,7 @@ DIGEST_PROMPT = """너는 사용자의 '하루서랍' 비서다. 사용자가 {l
 쓸 것:
 - headline: 그날을 한 줄로 (24자 이내, 무엇에 관심을 쏟은 날인지). 예: "회천 매물 비교하고 AI 자동화 파고든 날"
 - summary: 6~9문장을 2~3단락으로 쓴다. 오늘 모은 주제, 항목별 핵심 내용과 근거, 항목들 사이의 연결점, 놓치면 안 될 조건·한계를 설명한다. 근거가 적으면 짧게 쓴다. 단락 사이에 빈 줄을 넣는다.
+- quick_summary: 가장 먼저 읽을 정확히 3개 문장. 각 줄은 핵심 판단과 중요한 근거 또는 참고 조건을 50~120자 내외로 연결해 설명한다. 여러 자료의 주제를 균형 있게 반영한다. 키워드·제목 나열이나 잠금카드 문구의 반복을 피한다. 제작자의 주장과 전사 불확실성을 유지한다.
 - highlights: 가장 중요한 항목 최대 3개 (ref + why: 왜 중요한지 35자 이내)
 - themes: 주제 묶음 최대 5개 (name 12자 이내 + 그 묶음의 항목 refs + insight: 각 자료가 무엇을 말하며 왜 함께 참고할 만한지 2~4문장으로 설명). 항목이 하나뿐인 주제도 괜찮다. 원문에 없는 인과관계는 만들지 않는다.
 - todos: 실제로 해야 할 일 최대 6개 (text 30자 이내, 관련 항목 ref 없으면 빈 문자열, when: 오늘/이번 주/언젠가). 막연한 "확인하기"보다 구체적으로.
@@ -246,6 +256,8 @@ def analyze_batch(items: list[dict], settings: dict) -> dict[str, dict]:
         if not it:
             continue
         row = {k: v for k, v in row.items() if k != "ref"}
+        from .briefing import validate_item
+        validate_item(row)
         row["importance"] = max(1, min(5, int(row.get("importance") or 2)))
         row["source"] = llm_info.get("backend", "ai")
         row["summary_version"] = SUMMARY_VERSION
@@ -271,6 +283,17 @@ def analyze_items(items: list[dict], settings: dict, log=print) -> dict:
             from .transcribe import evidence_sig
             evidence_matches = not meta.get("transcript") or (prev and
                 prev.get("analysis", {}).get("evidence_sig") == evidence_sig(meta))
+            if prev and evidence_matches and meta.get("transcript"):
+                from .transcribe import NOTES_VERSION, FULL_BASES
+                notes_sig = hashlib.sha256(f"{NOTES_VERSION}:{meta['transcript']}".encode()).hexdigest()
+                notes_meta = next((m for m in (meta, prev.get("meta") or {})
+                                   if m.get("transcript_notes_complete") and m.get("transcript_notes_sig") == notes_sig), None)
+                if notes_meta:
+                    meta = dict(meta, **{k: notes_meta[k] for k in
+                                        ("transcript_notes", "transcript_notes_sig", "transcript_notes_complete")})
+                    store.update_item(it["id"], meta=meta)
+                elif meta.get("content_basis") in FULL_BASES:
+                    evidence_matches = False  # 전문의 정리 자료도 준비되어야 재사용한다.
             if prev and prev.get("analysis") and (not llm.available(settings) or
                     (prev["analysis"].get("source") != "heuristic" and
                      prev["analysis"].get("summary_version") == SUMMARY_VERSION)) and evidence_matches:
@@ -363,6 +386,7 @@ def _item_view(it: dict) -> dict:
         "transcript_sections": meta.get("transcript_notes", []) if meta.get("transcript_notes_complete") else [],
         "category": a.get("category", "기타"), "title": a.get("title") or meta.get("title") or "",
         "summary": a.get("summary", ""), "key_points": a.get("key_points", []), "intent": a.get("intent", ""),
+        "quick_summary": a.get("quick_summary", []), "briefing": a.get("briefing", []),
         "actions": a.get("actions", []), "tags": a.get("tags", []), "importance": a.get("importance", 2),
         "lock_line": a.get("lock_line", ""), "analysis_source": a.get("source", ""),
     }
@@ -406,6 +430,7 @@ def build_digest(day: str, settings: dict, force: bool = False, log=print) -> di
         for v in views:
             lines.append(json.dumps({"ref": ref_of[v["id"]], "시각": v["time"], "종류": KIND_KO.get(v["kind"]),
                                      "카테고리": v["category"], "제목": v["title"], "요약": v["summary"],
+                                     "3줄 요약": v["quick_summary"], "상세 브리핑": v["briefing"],
                                      "포인트": v["key_points"], "의도": v["intent"], "할일후보": v["actions"],
                                      "중요도": v["importance"],
                                      "확보범위": v.get("content_basis"), "내용확보안내": v.get("note"),
@@ -417,6 +442,8 @@ def build_digest(day: str, settings: dict, force: bool = False, log=print) -> di
                                       trend=trend_txt, items="\n".join(lines))
         try:
             data = run_json(prompt, DIGEST_SCHEMA, (), settings, effort=settings["llm"].get("digest_effort", "medium"))
+            from .briefing import validate_quick
+            validate_quick(data)
         except LLMError as e:
             log(f"보고서 AI 실패 → 규칙 기반: {e}")
             store.log_event("error", f"보고서 AI 실패: {str(e)[:200]}")
@@ -437,6 +464,7 @@ def build_digest(day: str, settings: dict, force: bool = False, log=print) -> di
     digest = {
         "day": day, "label": day_label(day), "generated_at": iso(now()),
         "headline": data.get("headline", ""), "summary": data.get("summary", ""),
+        "quick_summary": data.get("quick_summary", []),
         "highlights": [{"id": conv(h.get("ref")), "why": h.get("why", "")} for h in data.get("highlights", [])
                        if conv(h.get("ref"))],
         "themes": [{"name": t.get("name", ""), "ids": [x for x in (conv(r) for r in t.get("refs", [])) if x],

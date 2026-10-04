@@ -193,11 +193,13 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
                 d = latest_day(settings)
                 if d:
                     target.add(d)
-            built = []
+            built, digest_errors = [], []
             for day in sorted(target):
                 dg = build_digest(day, settings, force=force_digest or day in upgrade, log=log)
                 if dg:
                     built.append(day)
+                    if settings['llm'].get('backend') != 'fake' and dg.get('llm', {}).get('backend') == 'heuristic':
+                        digest_errors.append(day)
             from .archive import export_day
             exported, export_errors = [], []
             for day in built:
@@ -221,9 +223,9 @@ def run(days: list[str] | None = None, publish: bool = True, force_digest: bool 
                     except Exception as e:
                         log(f"폰으로 보내기 실패: {e}")
                         store.log_event("error", f"보내기 실패: {str(e)[:160]}")
-            result = {"ok": not bool(transcription["errors"] or stats.get("transcript_incomplete")),
+            result = {"ok": not bool(transcription["errors"] or stats.get("transcript_incomplete") or digest_errors or export_errors),
                       "days": sorted(target), "built": built, "published": published,
-                      "exported": exported, "export_errors": export_errors,
+                      "exported": exported, "export_errors": export_errors, "digest_errors": digest_errors,
                       "analysis": stats, "youtube": youtube, "transcription": transcription,
                       "sec": round(time.time() - t0, 1), "at": iso(now())}
             store.kv_set("last_run", result)

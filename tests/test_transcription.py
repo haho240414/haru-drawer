@@ -102,7 +102,7 @@ def test_long_transcript_all_parts_reach_item_prompt(home):
     calls = []
     def ai(prompt, *args):
         calls.append(prompt)
-        return {"summary": "구간 요약", "points": ["마지막 결론 250만원" if "마지막 결론은" in prompt else "수치 10만원"], "uncertain": []}
+        return {"summary": "구간 요약", "points": ["마지막 결론 250만원" if "마지막 결론은" in prompt else "수치 10만원"], "uncertain": [], "sections": [{"heading": "원문 설명", "time": "00:00:00–00:02:00", "body": "확인한 내용과 근거"}]}
     meta = transcribe.prepare_notes(it, {}, ai)
     assert len(calls) == len(transcribe.split_transcript(text)) > 2
     assert "마지막 결론은 250만원" in calls[-1]
@@ -122,7 +122,7 @@ def test_notes_checkpoint_resumes_only_unfinished_parts(home, monkeypatch):
         calls.append(prompt)
         if len(calls) == 2:
             raise LLMError("한도")
-        return {"summary": "확인한 주장", "points": ["근거"], "uncertain": []}
+        return {"summary": "확인한 주장", "points": ["근거"], "uncertain": [], "sections": [{"heading": "원문 설명", "time": "00:00:00–00:02:00", "body": "확인한 내용과 근거"}]}
     with pytest.raises(LLMError):
         transcribe.prepare_notes(it, {}, ai)
     saved = store.get_item(it["id"])
@@ -136,8 +136,8 @@ def test_shorter_replacement_transcript_drops_stale_notes(home):
     meta = {"transcript": "새롭게 확인한 음성 원문", "content_basis": "audio_transcript",
             "transcript_notes_sig": "old", "transcript_notes_complete": True,
             "transcript_notes": [{"summary": "이전 영상의 다른 내용"}]}
-    updated = transcribe.prepare_notes(item(meta), {}, lambda *a: pytest.fail("짧은 원문은 직접 읽음"))
-    assert "transcript_notes" not in updated
+    updated = transcribe.prepare_notes(item(meta), {}, lambda *a: {"summary": "새 음성", "points": [], "uncertain": [], "sections": [{"heading": "새 원문", "time": "00:00:00", "body": "새롭게 확인한 음성 원문"}]})
+    assert updated["transcript_notes_complete"] and "이전 영상" not in str(updated["transcript_notes"])
     prompt = summarize_meta_for_prompt(updated)
     assert "새롭게 확인한 음성 원문" in prompt and "이전 영상" not in prompt
 
@@ -179,8 +179,10 @@ def test_archive_keeps_full_text_srt_and_all_sections(home):
     assert next((folder / "전문").glob("*.txt")).read_text().strip() == it["meta"]["transcript"]
     assert "00:02:00,000" in next((folder / "전문").glob("*.srt")).read_text()
     html = (folder / "보고서.html").read_text()
-    assert "영상 전체 구간별 정리" in html and "마지막 &lt;script&gt; 결론" in html
-    assert "시간 표시 전문 받기" in html and "숫자 확인" in html
+    assert "원본 순서대로 정리한 전체 내용 읽기" in html
+    source = (folder / "원본내용정리.html").read_text()
+    assert "마지막 &lt;script&gt; 결론" in source
+    assert "시간 표시 전문 받기" in html and "숫자 확인" in source
 
 
 def test_new_transcript_cannot_reuse_an_old_metadata_summary(home, monkeypatch):
@@ -197,7 +199,9 @@ def test_new_transcript_cannot_reuse_an_old_metadata_summary(home, monkeypatch):
     prompts = []
     def ai(prompt, *args):
         prompts.append(prompt)
-        return {"items": [{"ref": "A1", "title": "실제 내용", "summary": "세전 250만원", "category": "재테크·투자"}],
+        if "전문의" in prompt:
+            return {"summary": "세전 250만원", "points": ["세전 250만원"], "uncertain": [], "sections": [{"heading": "수입", "time": "00:00:00", "body": "세전 250만원"}]}
+        return {"items": [{"ref": "A1", "title": "실제 내용", "summary": "세전 250만원", "category": "재테크·투자", "quick_summary": ["세전 수입", "250만원", "검증 필요"], "briefing": [{"heading": "수입", "body": "세전 250만원"}]}],
                 "_llm": {"backend": "codex"}}
     monkeypatch.setattr(llm, "available", lambda s: True)
     monkeypatch.setattr(analyze, "run_json", ai)

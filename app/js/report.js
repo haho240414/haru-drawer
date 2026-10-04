@@ -27,7 +27,8 @@ export function renderReport(root, data, ctx) {
     <div class="report-reading">
       <section class="hero">
         <h1 class="headline">${esc(d.headline)}</h1>
-        <p class="summary">${esc(d.summary)}</p>
+        ${quickHtml(d)}
+        ${d.quick_summary?.length ? `<details class="daily-briefing"><summary>${icon("chevron-right", "disclosure-icon")}오늘의 상세 브리핑</summary><p class="summary">${esc(d.summary)}</p></details>` : `<p class="summary">${esc(d.summary)}</p>`}
         <div class="legend" aria-label="자료 분류">${cats.map(([c, n]) => `<span>${esc(c)} ${n}</span>`).join("")}</div>
       </section>
 
@@ -102,6 +103,7 @@ export function renderReport(root, data, ctx) {
 
 function itemHtml(it, ctx) {
   const thumb = ctx.thumbUrl(it);
+  const hasBriefing = it.briefing?.length || it.quick_summary?.length;
   const host = it.url ? (() => { try { return new URL(it.url).hostname.replace(/^www\./, ""); } catch { return ""; } })() : "";
   return `<article class="item" id="it-${cssId(it.id)}" data-category="${esc(it.category || "")}">
     <div class="item-icon">${icon(KIND_ICON[it.kind] || "file")}</div>
@@ -111,13 +113,15 @@ function itemHtml(it, ctx) {
         <span class="sr-only">중요도 ${esc(it.importance || 0)} / 5</span>
         ${it.source === "share" ? "<span>· 폰 공유</span>" : ""}</div>
       ${it.source === "youtube" ? `<div class="meta">유튜브 ${it.date_basis === "first_observed_at" ? "처음 발견한 날짜 기준" : "저장일 기준"} · ${esc((it.youtube_playlists || []).map(p => p.name).join(" · "))}</div>` : ""}
-      <p class="sum">${esc(it.summary)}</p>
-      ${it.key_points?.length || it.actions?.length ? `<details class="item-extra"><summary>${icon("chevron-right", "disclosure-icon")}핵심 내용과 실행 메모</summary>
+      ${quickHtml(it) || `<p class="sum">${esc(it.summary)}</p>`}
+      ${hasBriefing || it.key_points?.length || it.actions?.length ? `<details class="item-extra briefing"><summary>${icon("chevron-right", "disclosure-icon")}${hasBriefing ? "상세 브리핑" : "핵심 내용과 실행 메모"}</summary>
+        ${it.briefing?.length ? it.briefing.map(s => `<h4>${esc(s.heading)}</h4><p class="sum">${esc(s.body)}</p>`).join("") : hasBriefing ? `<p class="sum">${esc(it.summary)}</p>` : ""}
+        ${it.key_points?.length ? "<h4>기억할 포인트</h4>" : ""}
         ${it.key_points?.length ? `<ul class="kp">${it.key_points.map(k => `<li>${esc(k)}</li>`).join("")}</ul>` : ""}
         ${it.actions?.length ? `<div class="acts">${it.actions.map(a => `<span class="act">${esc(a)}</span>`).join("")}</div>` : ""}</details>` : ""}
-      ${it.transcript_sections?.length ? `<details class="item-extra"><summary>${icon("chevron-right", "disclosure-icon")}영상 전체 구간별 정리</summary>
-        ${it.transcript_sections.map(s => `<h4>구간 ${esc(s.part)}/${esc(s.total)}</h4><p class="sum">${esc(s.summary)}</p>
-          <ul class="kp">${(s.points || []).map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+      ${it.transcript_sections?.length ? `<details class="item-extra source-notes"><summary>${icon("chevron-right", "disclosure-icon")}원본 내용 정리 · 시간 순서대로</summary>
+        <p class="note">음성·자막을 풀어 쓴 정리본입니다. 반복·광고는 축약했으며, 전사 전문은 노트북에 보관합니다.</p>
+        ${it.transcript_sections.map(s => `${s.sections?.length ? s.sections.map(ch => `<h4>${esc(ch.heading)}</h4><p class="note">${esc(ch.time)}</p><p class="sum">${esc(ch.body)}</p>`).join("") : `<h4>구간 ${esc(s.part)}/${esc(s.total)}</h4><p class="sum">${esc(s.summary)}</p><ul class="kp">${(s.points || []).map(p => `<li>${esc(p)}</li>`).join("")}</ul>`}
           ${(s.uncertain || []).map(p => `<p class="note">확인 필요: ${esc(p)}</p>`).join("")}`).join("")}</details>` : ""}
       <div class="links">
         ${it.url ? `<a href="${esc(it.url)}" data-open="${esc(it.url)}">${esc(it.site || host)} 열기 ${icon("external-link")}</a>` : ""}
@@ -128,6 +132,10 @@ function itemHtml(it, ctx) {
     </div>
     ${thumb ? `<button class="thumb-button" data-full="${esc(ctx.fullUrl(it) || thumb)}" aria-label="${esc(it.title || "이미지")} 크게 보기"><img class="thumb" src="${esc(thumb)}" alt="" loading="lazy"></button>` : ""}
   </article>`;
+}
+
+function quickHtml(data) {
+  return data.quick_summary?.length ? `<div class="quick-summary"><h4>3줄 요약</h4><ol>${data.quick_summary.map(s => `<li>${esc(s)}</li>`).join("")}</ol></div>` : "";
 }
 
 export function cssId(id) { return String(id).replace(/[^a-zA-Z0-9_-]/g, "_"); }

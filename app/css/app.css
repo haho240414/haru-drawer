@@ -331,6 +331,13 @@ utilities never precede the daily reading. */
   margin:0;
   line-height:1.8;
 }
+.quick-summary h4 {font-size:12px;font-weight:500;color:var(--text-2);margin:18px 0 8px;}
+.quick-summary ol {padding-left:22px;margin:0;color:var(--text);line-height:1.8;}
+.quick-summary li {padding:4px 0 4px 5px;overflow-wrap:anywhere;}
+.item .quick-summary {font-size:15px;margin:10px 0 12px;}
+.daily-briefing {margin-top:18px;}
+.briefing h4,.source-notes h4 {font-size:15px;margin:22px 0 7px;line-height:1.6;}
+.item .briefing .sum,.item .source-notes .sum {font-size:15px;line-height:1.85;}
 .legend {
   display:flex;
   flex-wrap:wrap;
