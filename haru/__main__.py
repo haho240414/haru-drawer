@@ -47,6 +47,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("youtube", help="YouTube 계정 상태·재생목록 조회·새 저장분 수집")
     p.add_argument("action", choices=["status", "playlists", "sync", "snapshot", "due", "done"])
     p.add_argument("--file", type=Path, help="로그인된 브라우저에서 확인한 전체 목록 JSON")
+    p.add_argument("--day", help="done에 기록할 최초 due의 날짜 (자정을 넘긴 작업용)")
     a = ap.parse_args(argv)
     config.ensure_dirs()
     settings = config.load_settings()
@@ -90,9 +91,11 @@ def main(argv=None) -> int:
         try:
             if a.action == "snapshot" and not a.file:
                 ap.error("youtube snapshot에는 --file이 필요해요")
+            if a.day and a.action != "done":
+                ap.error("youtube --day는 done에만 사용할 수 있어요")
             result = {"status": lambda: youtube.status(settings), "playlists": youtube.list_playlists,
                       "sync": lambda: youtube.sync(settings),
-                      "due": lambda: youtube.browser_due(settings), "done": youtube.browser_done,
+                      "due": lambda: youtube.browser_due(settings), "done": lambda: youtube.browser_done(a.day),
                       "snapshot": lambda: youtube.import_browser_snapshot(json.loads(a.file.read_text("utf-8")), settings)}[a.action]()
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 1 if isinstance(result, dict) and result.get("errors") else 0

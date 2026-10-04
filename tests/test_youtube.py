@@ -250,3 +250,27 @@ def test_korean_22_schedule_runs_once_across_la_dst(home, monkeypatch):
     assert youtube.browser_due(cfg)["due"]
     youtube.browser_done()
     assert not youtube.browser_due(cfg)["due"]
+
+
+def test_browser_done_after_midnight_keeps_the_collected_day(home, monkeypatch, capsys):
+    from haru.__main__ import main
+    cfg = config.update_settings({"youtube": {"mode": "browser", "enabled": True}})
+    monkeypatch.setattr(youtube, "now", lambda: datetime.fromisoformat("2026-10-05T00:15:00+09:00"))
+    assert main(["youtube", "done", "--day", "2026-10-04"]) == 0
+    assert json.loads(capsys.readouterr().out)["day"] == "2026-10-04"
+    assert store.kv_get("youtube_browser_daily_run")["day"] == "2026-10-04"
+    monkeypatch.setattr(youtube, "now", lambda: datetime.fromisoformat("2026-10-05T22:00:00+09:00"))
+    assert youtube.browser_due(cfg)["due"]  # 다음 날 예약을 잘못 건너뛰지 않는다.
+
+
+def test_browser_done_rejects_invalid_future_and_regressive_days(home, monkeypatch):
+    monkeypatch.setattr(youtube, "now", lambda: datetime.fromisoformat("2026-10-05T00:15:00+09:00"))
+    for day in ("2026-10-06", "2026-02-30", "20261004", "2026-10-04/extra"):
+        with pytest.raises(youtube.YouTubeError):
+            youtube.browser_done(day)
+        assert store.kv_get("youtube_browser_daily_run") is None
+    youtube.browser_done("2026-10-04")
+    previous = store.kv_get("youtube_browser_daily_run")
+    with pytest.raises(youtube.YouTubeError):
+        youtube.browser_done("2026-10-03")
+    assert store.kv_get("youtube_browser_daily_run") == previous

@@ -11,7 +11,7 @@ import secrets
 import tempfile
 import time
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import date, timedelta
 from urllib.parse import urlencode, urlsplit, parse_qs
 from zoneinfo import ZoneInfo
 
@@ -323,8 +323,17 @@ def browser_due(settings: dict | None = None) -> dict:
     return {"due": due, "day": day, "at": cur.isoformat(timespec="seconds"), "completed_today": previous.get("day") == day}
 
 
-def browser_done() -> dict:
-    day = now().astimezone(ZoneInfo("Asia/Seoul")).date().isoformat()
+def browser_done(day: str | None = None) -> dict:
+    current = now().astimezone(ZoneInfo("Asia/Seoul")).date()
+    day = day if day is not None else current.isoformat()
+    try:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) or date.fromisoformat(day) > current:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise YouTubeError("완료 날짜는 오늘 또는 이전의 YYYY-MM-DD여야 해요") from None
+    previous = store.kv_get("youtube_browser_daily_run") or {}
+    if previous.get("day", "") > day:
+        raise YouTubeError("더 최근의 완료 기록을 이전 날짜로 바꿀 수 없어요")
     result = {"day": day, "at": iso(now())}
     store.kv_set("youtube_browser_daily_run", result)
     return result
