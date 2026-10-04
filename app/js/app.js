@@ -118,9 +118,17 @@ async function showDay(day) {
     rep.querySelectorAll(".item").forEach(item => { item.hidden = !!category && item.dataset.category !== category; });
   };
   rep.onclick = async (ev) => {
-    const t = ev.target.closest("[data-goto],[data-open],[data-style],[data-act],[data-hide],[data-filter],[data-full]");
+    const t = ev.target.closest("[data-goto],[data-section],[data-open],[data-style],[data-act],[data-hide],[data-filter],[data-full]");
     if (!t) return;
     if ("filter" in t.dataset) { filterItems(t.dataset.filter); return; }
+    if (t.dataset.section) {
+      const target = document.getElementById(t.dataset.section);
+      if (target && rep.contains(target)) {
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      }
+      return;
+    }
     if (t.dataset.hide) {
       if (!confirm("이 항목을 보고서에서 뺄까요? (그날 보고서를 다시 정리해요)")) return;
       await Source.hide(t.dataset.hide);

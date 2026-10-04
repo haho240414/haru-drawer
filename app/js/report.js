@@ -26,18 +26,21 @@ export function renderReport(root, data, ctx) {
   root.innerHTML = `<div class="report-layout">
     <div class="report-reading">
       <section class="hero">
+        <p class="eyebrow">오늘의 서랍</p>
         <h1 class="headline">${esc(d.headline)}</h1>
+        <p class="reading-intro">모아둔 ${items.length}개 자료에서 꺼낸 오늘의 이야기.</p>
         ${quickHtml(d)}
         ${d.quick_summary?.length ? `<details class="daily-briefing"><summary>${icon("chevron-right", "disclosure-icon")}오늘의 상세 브리핑</summary><p class="summary">${esc(d.summary)}</p></details>` : `<p class="summary">${esc(d.summary)}</p>`}
         <div class="legend" aria-label="자료 분류">${cats.map(([c, n]) => `<span>${esc(c)} ${n}</span>`).join("")}</div>
       </section>
+      <nav class="reading-nav" aria-label="보고서 읽기"><button data-section="collection">${icon("file-text")} 자료별로 읽기</button>${d.highlights?.length ? '<button data-section="highlights">눈여겨볼 이야기</button>' : ''}</nav>
 
-      ${d.highlights?.length ? `<section class="report-section"><h2>오늘의 핵심</h2>
+      ${d.highlights?.length ? `<section class="report-section" id="highlights" tabindex="-1"><h2>눈여겨볼 이야기</h2>
         ${d.highlights.map((h, i) => byId[h.id] ? `<button class="hl" data-goto="${esc(h.id)}" aria-label="${esc(byId[h.id].title)} 원본 자료로 이동">
           <span class="num">${String(i + 1).padStart(2, "0")}</span><span><span class="t">${esc(byId[h.id].title)}</span>
           <span class="why">${esc(h.why)}</span></span></button>` : "").join("")}</section>` : ""}
 
-      ${d.todos?.length ? `<section class="report-section"><h2>할 일</h2>
+      ${d.todos?.length ? `<section class="report-section"><h2>꺼내두면 좋을 메모</h2><p class="section-caption">시간이 날 때 하나씩 살펴보세요.</p>
         ${d.todos.map((t, i) => `<div class="todo ${t.done ? "done" : ""}">
           <input type="checkbox" id="todo-${i}" data-todo="${esc(t.key)}" ${t.done ? "checked" : ""}>
           <label class="txt" for="todo-${i}">${esc(t.text)}</label>
@@ -45,8 +48,8 @@ export function renderReport(root, data, ctx) {
           ${t.when ? `<span class="when ${t.when === "오늘" ? "today" : ""}">${esc(t.when)}</span>` : ""}</div>`).join("")}
         ${d.tomorrow ? `<p class="meta" style="margin-top:12px">내일 아침: ${esc(d.tomorrow)}</p>` : ""}</section>` : ""}
 
-      <section class="report-section" aria-label="모은 자료">
-        <div class="collection-head"><h2>모은 자료</h2><div class="filters" aria-label="분류 필터">
+      <section class="report-section" id="collection" tabindex="-1" aria-label="모은 자료">
+        <div class="collection-head"><h2>차곡차곡 모은 자료</h2><div class="filters" aria-label="분류 필터">
           <button class="filter on" data-filter="" aria-pressed="true">전체 ${items.length}</button>
           ${filters.map(c => `<button class="filter" data-filter="${esc(c)}" aria-pressed="false">${esc(c)} ${items.filter(i => i.category === c).length}</button>`).join("")}
         </div></div>
@@ -76,7 +79,8 @@ export function renderReport(root, data, ctx) {
     </div>
 
     <aside class="report-utilities" aria-label="보고서 활용">
-      <section class="utility"><h2>잠금화면 요약</h2>
+      <section class="utility"><p class="eyebrow">폰에서도 가볍게</p><h2>잠깐 보는 오늘</h2>
+        <p class="section-caption">잠금화면에 담을 짧은 요약이에요.</p>
         <p class="lock-title">${esc(d.lock?.title || d.headline)}</p>
         <ul class="lock-lines">${(d.lock?.lines || []).map(l => `<li>${esc(l)}</li>`).join("")}</ul>
         <div class="seg" id="styleSeg" aria-label="잠금화면 카드 모양">
@@ -91,8 +95,8 @@ export function renderReport(root, data, ctx) {
         ${ctx.lockActions || ""}${ctx.lockNote ? `<p class="meta">${ctx.lockNote}</p>` : ""}
       </section>
 
-      ${!ctx.isNative ? `<section class="utility"><h2>노트북에 보관</h2>
-        <p class="meta">보고서·할 일·링크와 분류한 원본을 날짜별 폴더에 저장합니다.</p>
+      ${!ctx.isNative ? `<section class="utility"><p class="eyebrow">다시 읽고 싶은 날에</p><h2>노트북에 보관</h2>
+        <p class="meta">오늘의 브리핑과 원본 정리를 날짜별 폴더에 담아둡니다.</p>
         <button class="btn block" id="saveFiles">${icon("download")} ${data.archive?.exists ? "파일 갱신" : "파일로 저장"}</button>
         ${data.archive?.exists ? `<a class="secondary-link" href="${esc(data.archive.url)}" target="_blank" rel="noopener">저장한 보고서 보기 ${icon("external-link")}</a>` : ""}
         <details class="path-details"><summary>${icon("chevron-right", "disclosure-icon")}저장 위치</summary><p class="meta">${esc(data.archive?.path || "")}</p></details>
@@ -105,14 +109,17 @@ function itemHtml(it, ctx) {
   const thumb = ctx.thumbUrl(it);
   const hasBriefing = it.briefing?.length || it.quick_summary?.length;
   const host = it.url ? (() => { try { return new URL(it.url).hostname.replace(/^www\./, ""); } catch { return ""; } })() : "";
+  let chapter = 0;
+  const chapters = (it.transcript_sections || []).flatMap(s => s.sections || []);
+  const chapterId = n => `chapter-${cssId(it.id)}-${n}`;
   return `<article class="item" id="it-${cssId(it.id)}" data-category="${esc(it.category || "")}">
-    <div class="item-icon">${icon(KIND_ICON[it.kind] || "file")}</div>
+    <div class="item-icon">${icon(it.source === "youtube" ? "square-play" : KIND_ICON[it.kind] || "file")}</div>
     <div><h3 class="title">${esc(it.title || KIND_LABEL[it.kind])}</h3>
       <div class="head"><span>${esc(KIND_LABEL[it.kind] || "자료")} · ${esc(it.time)}</span><span>${esc(it.category)}</span>
         ${it.intent ? `<span>· ${esc(it.intent)}</span>` : ""}
         <span class="sr-only">중요도 ${esc(it.importance || 0)} / 5</span>
         ${it.source === "share" ? "<span>· 폰 공유</span>" : ""}</div>
-      ${it.source === "youtube" ? `<div class="meta">유튜브 ${it.date_basis === "first_observed_at" ? "처음 발견한 날짜 기준" : "저장일 기준"} · ${esc((it.youtube_playlists || []).map(p => p.name).join(" · "))}</div>` : ""}
+      ${it.source === "youtube" ? `<p class="item-origin">${esc(it.channel || "유튜브")} ${it.duration ? `· ${fmtDuration(it.duration)}` : ""} · ${esc((it.youtube_playlists || []).map(p => p.name).join(" · "))}</p>` : ""}
       ${quickHtml(it) || `<p class="sum">${esc(it.summary)}</p>`}
       ${hasBriefing || it.key_points?.length || it.actions?.length ? `<details class="item-extra briefing"><summary>${icon("chevron-right", "disclosure-icon")}${hasBriefing ? "상세 브리핑" : "핵심 내용과 실행 메모"}</summary>
         ${it.briefing?.length ? it.briefing.map(s => `<h4>${esc(s.heading)}</h4><p class="sum">${esc(s.body)}</p>`).join("") : hasBriefing ? `<p class="sum">${esc(it.summary)}</p>` : ""}
@@ -121,14 +128,15 @@ function itemHtml(it, ctx) {
         ${it.actions?.length ? `<div class="acts">${it.actions.map(a => `<span class="act">${esc(a)}</span>`).join("")}</div>` : ""}</details>` : ""}
       ${it.transcript_sections?.length ? `<details class="item-extra source-notes"><summary>${icon("chevron-right", "disclosure-icon")}원본 내용 정리 · 시간 순서대로</summary>
         <p class="note">음성·자막을 풀어 쓴 정리본입니다. 반복·광고는 축약했으며, 전사 전문은 노트북에 보관합니다.</p>
-        ${it.transcript_sections.map(s => `${s.sections?.length ? s.sections.map(ch => `<h4>${esc(ch.heading)}</h4><p class="note">${esc(ch.time)}</p><p class="sum">${esc(ch.body)}</p>`).join("") : `<h4>구간 ${esc(s.part)}/${esc(s.total)}</h4><p class="sum">${esc(s.summary)}</p><ul class="kp">${(s.points || []).map(p => `<li>${esc(p)}</li>`).join("")}</ul>`}
+        ${chapters.length ? `<details class="chapter-index"><summary>${icon("chevron-right", "disclosure-icon")}목차 · ${chapters.length}개 이야기</summary><ol>${chapters.map((ch, n) => `<li><button data-section="${chapterId(n + 1)}"><span>${esc(ch.time)}</span>${esc(ch.heading)}</button></li>`).join("")}</ol></details>` : ""}
+        ${it.transcript_sections.map(s => `${s.sections?.length ? s.sections.map(ch => `<h4 id="${chapterId(++chapter)}" tabindex="-1">${esc(ch.heading)}</h4><p class="chapter-time">${esc(ch.time)}</p><p class="sum">${esc(ch.body)}</p>`).join("") : `<h4>구간 ${esc(s.part)}/${esc(s.total)}</h4><p class="sum">${esc(s.summary)}</p><ul class="kp">${(s.points || []).map(p => `<li>${esc(p)}</li>`).join("")}</ul>`}
           ${(s.uncertain || []).map(p => `<p class="note">확인 필요: ${esc(p)}</p>`).join("")}`).join("")}</details>` : ""}
       <div class="links">
         ${it.url ? `<a href="${esc(it.url)}" data-open="${esc(it.url)}">${esc(it.site || host)} 열기 ${icon("external-link")}</a>` : ""}
-        ${it.duration ? `<span class="muted">${fmtDuration(it.duration)}${it.channel ? ` · ${esc(it.channel)}` : ""}</span>` : ""}
-        ${it.note ? `<span class="note">${esc(it.note)}</span>` : ""}
+        ${it.duration && it.source !== "youtube" ? `<span class="muted">${fmtDuration(it.duration)}${it.channel ? ` · ${esc(it.channel)}` : ""}</span>` : ""}
         ${ctx.canHide ? `<button class="chip" data-hide="${esc(it.id)}" title="${esc(it.title || "자료")}를 보고서에서 빼고 다시 정리">빼기</button>` : ""}
       </div>
+      ${it.note || it.source === "youtube" ? `<details class="item-provenance"><summary>${icon("chevron-right", "disclosure-icon")}수집·분석 정보</summary>${it.source === "youtube" ? `<p class="meta">유튜브 ${it.date_basis === "first_observed_at" ? "처음 발견한 날짜 기준" : "저장일 기준"}</p>` : ""}${it.note ? `<p class="meta">${esc(it.note)}</p>` : ""}</details>` : ""}
     </div>
     ${thumb ? `<button class="thumb-button" data-full="${esc(ctx.fullUrl(it) || thumb)}" aria-label="${esc(it.title || "이미지")} 크게 보기"><img class="thumb" src="${esc(thumb)}" alt="" loading="lazy"></button>` : ""}
   </article>`;

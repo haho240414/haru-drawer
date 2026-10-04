@@ -16,6 +16,7 @@ from urllib.parse import quote, urlsplit
 
 from . import config, store
 from .briefing import quick_html, quick_md, briefing_html, briefing_md, source_html, source_md, source_document, SOURCE_NOTICE
+from .reading_style import READING_CSS
 
 MANIFEST = ".haru-files.json"
 
@@ -156,29 +157,19 @@ def _report_html(digest: dict, assets: dict[str, str], transcripts: dict[str, st
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' file:; base-uri 'none'; form-action 'none'">
 <title>{esc(digest['day'])} · 하루서랍 보고서</title><style>
-*{{box-sizing:border-box}}body{{margin:0;background:#fff;color:#171d25;font-family:system-ui,-apple-system,sans-serif;line-height:1.75}}
-main{{max-width:800px;margin:auto;padding:36px 28px 80px}}header{{border-bottom:1px solid #e2e6eb;padding-bottom:26px;margin-bottom:28px}}
-.brand{{font-size:20px;font-weight:750;letter-spacing:-.5px}}h1{{font-size:clamp(26px,4vw,34px);line-height:1.35;letter-spacing:-1px;margin:24px 0 16px}}
-h2{{font-size:20px;margin:0 0 16px}}h3{{font-size:16px;margin:12px 0 8px}}p{{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 16px}}
-.meta,small{{color:#66707c;font-size:13px}}small{{display:block;margin-left:24px}}section{{margin:28px 0;padding-bottom:24px;border-bottom:1px solid #e2e6eb}}ul,ol{{padding-left:24px}}
-.checklist{{list-style:none;padding:0}}.checklist li{{padding:10px 0;border-bottom:1px solid #e2e6eb}}.checklist li:last-child{{border-bottom:0}}.grid{{display:block}}
-article{{border-top:1px solid #e2e6eb;padding:24px 0;min-width:0}}article:first-child{{border-top:0;padding-top:0}}a{{color:#3e6e8b;overflow-wrap:anywhere;text-underline-offset:4px}}
-.tag{{font-size:12px;padding:4px 9px;border-radius:4px;background:#f4f5f7;color:#525c68}}img{{max-width:100%;max-height:340px;object-fit:contain;border-radius:5px}}
-nav{{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px;font-size:13px}}footer{{margin-top:28px;padding-top:8px}}:focus-visible{{outline:2px solid #3e6e8b;outline-offset:4px}}
-summary{{cursor:pointer;padding:12px 0;color:#3e6e8b;font-weight:600}}.quick h4{{font-size:13px;color:#66707c;margin:16px 0 8px}}.quick ol{{margin:0 0 20px}}.quick li{{padding:4px 0}}details h4{{margin:24px 0 8px;font-size:16px}}details p{{font-size:15px}}
-@media(max-width:600px){{main{{padding:24px 20px 60px}}}}
-@media print{{body{{background:white}}main{{padding:0}}article{{break-inside:avoid}}nav{{display:none}}}}
+{READING_CSS}
 </style></head><body><main><header><div class="brand">하루서랍</div>
-<p class="meta">{esc(digest.get('label', digest['day']))} · {len(items)}개 자료 · 보고서 v{digest['version']} · {backend}</p>
-<h1>{esc(digest.get('headline'))}</h1>{opening}
-<nav><a href="보고서.md">보고서 Markdown</a><a href="할일.md">할 일</a><a href="링크.csv">링크 목록</a></nav></header>
-<section><h2>오늘의 핵심</h2><ol>{highlights}</ol></section>
-<section><h2>할 일</h2><ul class="checklist">{todos}</ul></section>
+<p class="meta">{esc(digest.get('label', digest['day']))} · {len(items)}개 자료</p><p class="eyebrow">오늘의 서랍</p>
+<h1>{esc(digest.get('headline'))}</h1><p class="reading-intro">모아둔 {len(items)}개 자료에서 꺼낸 오늘의 이야기.</p>{opening}
+<nav aria-label="보고서 읽기"><a href="#materials">자료별로 읽기</a>{'<a href="원본내용정리.html">전체 원본 정리 읽기</a>' if sources else ''}</nav></header>
+<section><h2>눈여겨볼 이야기</h2><ol>{highlights}</ol></section>
+<section><h2>꺼내두면 좋을 메모</h2><p class="caption">시간이 날 때 하나씩 살펴보세요.</p><ul class="checklist">{todos}</ul></section>
 {read_later}
 <section><h2>주제별 정리</h2>{themes}</section>
-<section><h2>모은 자료</h2><div class="grid">{content}</div></section>
+<section id="materials"><h2>차곡차곡 모은 자료</h2><div class="grid">{content}</div></section>
 <section><h2>다음에 할 것</h2><p>{esc(digest.get('tomorrow'))}</p></section>
-<footer class="meta">정리 시각 {esc(digest.get('generated_at'))} · 같은 보고서를 노트북과 폰에서 봅니다.</footer>
+<nav class="downloads" aria-label="파일로 보관"><a href="보고서.md">보고서 Markdown</a><a href="할일.md">할 일</a><a href="링크.csv">링크 목록</a></nav>
+<footer class="meta">보고서 v{digest['version']} · {backend} · 정리 시각 {esc(digest.get('generated_at'))}<br>오늘의 이야기를 필요할 때 다시 꺼내 읽으세요.</footer>
 </main></body></html>'''
 
 

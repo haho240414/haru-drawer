@@ -5,6 +5,7 @@ import html
 from urllib.parse import quote
 
 from .llm import LLMError
+from .reading_style import READING_CSS
 
 
 def validate_quick(data: dict) -> None:
@@ -38,13 +39,16 @@ def briefing_html(item: dict) -> str:
     return ''.join(f'<h4>{_esc(s.get("heading"))}</h4><p>{_esc(s.get("body"))}</p>' for s in sections)
 
 
-def source_html(item: dict) -> str:
+def source_html(item: dict, anchor_prefix: str | None = None) -> str:
     out = []
+    chapter = 0
     for group in item.get("transcript_sections", []):
         sections = group.get("sections") or []
         if sections:
             for s in sections:
-                out.append(f'<h3>{_esc(s.get("heading"))}</h3><p class="meta">{_esc(s.get("time"))}</p><p>{_esc(s.get("body"))}</p>')
+                chapter += 1
+                anchor = f' id="{_esc(anchor_prefix)}-chapter-{chapter}"' if anchor_prefix else ''
+                out.append(f'<div class="source-chapter"><h3{anchor}>{_esc(s.get("heading"))}</h3><p class="chapter-time">{_esc(s.get("time"))}</p><p>{_esc(s.get("body"))}</p></div>')
         else:  # 이전 보고서도 계속 읽을 수 있게 한다.
             out.append(f'<h3>구간 {_esc(group.get("part"))}/{_esc(group.get("total"))}</h3><p>{_esc(group.get("summary"))}</p><ul>' +
                        ''.join(f'<li>{_esc(p)}</li>' for p in group.get("points", [])) + '</ul>')
@@ -87,18 +91,20 @@ def source_document(digest: dict, transcripts: dict[str, str], anchors: dict[str
     toc = ''.join(f'<li><a href="#{anchors[i["id"]]}">{_esc(i.get("title"))}</a></li>' for i in items)
     body = []
     for item in items:
+        anchor = anchors[item["id"]]
+        chapters = [s for group in item.get("transcript_sections", []) for s in group.get("sections", [])]
+        chapter_toc = ('<details class="chapter-index"><summary>목차 · ' + str(len(chapters)) + '개 이야기</summary><ol>' +
+                       ''.join(f'<li><a href="#{anchor}-chapter-{n}"><span>{_esc(s.get("time"))}</span>{_esc(s.get("heading"))}</a></li>'
+                               for n, s in enumerate(chapters, 1)) + '</ol></details>') if chapters else ''
         path = transcripts.get(item["id"])
         downloads = f'<a href="{quote(path)}" download>시간 표시 전사 전문 TXT</a>' if path else ''
         if path and item["id"] in srts:
             downloads += f' · <a href="{quote(path[:-4] + ".srt")}" download>시간 표시 자막 SRT</a>'
-        body.append(f'<article id="{anchors[item["id"]]}"><h2>{_esc(item.get("title"))}</h2>'
-                    f'<p class="meta">{_esc(item.get("category"))} · {downloads}</p>{source_html(item)}</article>')
+        body.append(f'<article id="{anchor}"><p class="eyebrow">{_esc(item.get("category"))}</p><h2>{_esc(item.get("title"))}</h2>'
+                    f'<p class="meta">{downloads}</p>{chapter_toc}{source_html(item, anchor)}<a class="back-to-contents" href="#contents">영상 목차로 돌아가기</a></article>')
     return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <title>{_esc(digest['day'])} · 원본 내용 정리</title><style>
-*{{box-sizing:border-box}}body{{margin:0;color:#171d25;background:#fff;font-family:system-ui,-apple-system,sans-serif;line-height:1.85}}
-main{{max-width:800px;margin:auto;padding:32px 28px 80px}}h1{{font-size:30px;letter-spacing:-1px;line-height:1.4}}h2{{font-size:23px;line-height:1.5}}h3{{font-size:18px;margin:32px 0 6px}}p{{white-space:pre-wrap;overflow-wrap:anywhere}}.meta{{font-size:13px;color:#66707c}}
-a{{color:#3e6e8b;overflow-wrap:anywhere;text-underline-offset:4px}}article{{border-top:1px solid #e2e6eb;margin-top:36px;padding-top:24px;scroll-margin-top:20px}}li{{margin:10px 0}}:focus-visible{{outline:2px solid #3e6e8b;outline-offset:4px}}
-@media(max-width:600px){{main{{padding:24px 20px 60px}}h1{{font-size:26px}}}}
-</style></head><body><main><a href="보고서.html">← 3줄 요약과 상세 브리핑</a><h1>원본 내용 정리</h1>
-<p class="meta">{_esc(digest.get('label', digest['day']))} · 보고서 v{digest['version']}</p><p>{SOURCE_NOTICE}</p><ol>{toc}</ol>{''.join(body)}</main></body></html>'''
+{READING_CSS}
+</style></head><body><nav class="reading-bar" aria-label="읽기 이동"><a href="보고서.html">← 3줄 요약과 상세 브리핑</a><a href="#contents">영상 목차</a></nav><main><header class="source-intro"><div class="brand">하루서랍</div><p class="eyebrow">조금 더 깊이 읽는 시간</p><h1>원본 내용 정리</h1>
+<p class="meta">{_esc(digest.get('label', digest['day']))} · 보고서 v{digest['version']}</p><p class="notice">{SOURCE_NOTICE}</p></header><nav class="contents" id="contents" aria-label="영상 목차"><h2>오늘 모아둔 영상</h2><ol>{toc}</ol></nav>{''.join(body)}</main></body></html>'''
