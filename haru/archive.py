@@ -17,6 +17,7 @@ from urllib.parse import quote, urlsplit
 from . import config, store
 from .briefing import quick_html, quick_md, briefing_html, briefing_md, source_html, source_md, source_document, SOURCE_NOTICE
 from .reading_style import READING_CSS
+from .appearance import theme_script, theme_control
 
 MANIFEST = ".haru-files.json"
 
@@ -153,12 +154,14 @@ def _report_html(digest: dict, assets: dict[str, str], transcripts: dict[str, st
     backend = "AI 분석" if digest.get("llm", {}).get("backend") not in (None, "heuristic", "fake") else "규칙 기반 정리"
     opening = (f'{quick_html(digest)}<details><summary>오늘의 상세 브리핑</summary><p>{esc(digest.get("summary"))}</p></details>'
                if digest.get('quick_summary') else f'<p>{esc(digest.get("summary"))}</p>')
+    script_hash, script_tag = theme_script()
     return f'''<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' file:; base-uri 'none'; form-action 'none'">
-<title>{esc(digest['day'])} · 하루서랍 보고서</title><style>
+<meta name="theme-color" content="#faf9f6">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src '{script_hash}'; style-src 'unsafe-inline'; img-src 'self' file:; base-uri 'none'; form-action 'none'">
+<title>{esc(digest['day'])} · 하루서랍 보고서</title>{script_tag}<style>
 {READING_CSS}
-</style></head><body><main><header><div class="brand">하루서랍</div>
+</style></head><body><main><header><div class="document-tools"><div class="brand">하루서랍</div>{theme_control()}</div>
 <p class="meta">{esc(digest.get('label', digest['day']))} · {len(items)}개 자료</p><p class="eyebrow">오늘의 서랍</p>
 <h1>{esc(digest.get('headline'))}</h1><p class="reading-intro">모아둔 {len(items)}개 자료에서 꺼낸 오늘의 이야기.</p>{opening}
 <nav aria-label="보고서 읽기"><a href="#materials">자료별로 읽기</a>{'<a href="원본내용정리.html">전체 원본 정리 읽기</a>' if sources else ''}</nav></header>

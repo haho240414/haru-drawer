@@ -3,9 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#faf8f2">
+<meta name="theme-color" content="#faf9f6">
 <title>하루서랍</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<script src="js/theme.js"></script>
+<link rel="stylesheet" href="css/theme.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -19,6 +21,7 @@
   <div class="wrap">
     <a class="brand" href="#/">하루서랍</a>
     <div class="spacer"></div>
+    <label class="appearance" hidden><span>화면</span><select data-theme-select aria-label="화면 테마"><option value="system">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></label>
     <button class="btn primary small" id="runBtn" title="새로 모은 자료 정리하기">정리하기</button>
   </div>
 </header>

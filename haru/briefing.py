@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 from .llm import LLMError
 from .reading_style import READING_CSS
+from .appearance import theme_script, theme_control
 
 
 def validate_quick(data: dict) -> None:
@@ -102,9 +103,11 @@ def source_document(digest: dict, transcripts: dict[str, str], anchors: dict[str
             downloads += f' · <a href="{quote(path[:-4] + ".srt")}" download>시간 표시 자막 SRT</a>'
         body.append(f'<article id="{anchor}"><p class="eyebrow">{_esc(item.get("category"))}</p><h2>{_esc(item.get("title"))}</h2>'
                     f'<p class="meta">{downloads}</p>{chapter_toc}{source_html(item, anchor)}<a class="back-to-contents" href="#contents">영상 목차로 돌아가기</a></article>')
+    script_hash, script_tag = theme_script()
     return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
-<title>{_esc(digest['day'])} · 원본 내용 정리</title><style>
+<meta name="theme-color" content="#faf9f6">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src '{script_hash}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>{_esc(digest['day'])} · 원본 내용 정리</title>{script_tag}<style>
 {READING_CSS}
-</style></head><body><nav class="reading-bar" aria-label="읽기 이동"><a href="보고서.html">← 3줄 요약과 상세 브리핑</a><a href="#contents">영상 목차</a></nav><main><header class="source-intro"><div class="brand">하루서랍</div><p class="eyebrow">조금 더 깊이 읽는 시간</p><h1>원본 내용 정리</h1>
+</style></head><body><nav class="reading-bar" aria-label="읽기 이동"><a href="보고서.html">← 브리핑</a><a href="#contents">영상 목차</a>{theme_control()}</nav><main><header class="source-intro"><div class="brand">하루서랍</div><p class="eyebrow">조금 더 깊이 읽는 시간</p><h1>원본 내용 정리</h1>
 <p class="meta">{_esc(digest.get('label', digest['day']))} · 보고서 v{digest['version']}</p><p class="notice">{SOURCE_NOTICE}</p></header><nav class="contents" id="contents" aria-label="영상 목차"><h2>오늘 모아둔 영상</h2><ol>{toc}</ol></nav>{''.join(body)}</main></body></html>'''

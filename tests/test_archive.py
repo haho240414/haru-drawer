@@ -97,7 +97,7 @@ def test_untrusted_text_urls_paths_and_csv_are_safe(home):
     store.save_digest(DAY, data, "safety-fixture")
     archive.export_day(DAY)
     folder = archive.day_dir(DAY)
-    assert "<script>" not in (folder / "보고서.html").read_text()
+    assert '<script>alert("bad")</script>' not in (folder / "보고서.html").read_text()
     assert "&lt;script&gt;" in (folder / "보고서.html").read_text()
     rows = list(csv.reader(io.StringIO((folder / "링크.csv").read_text("utf-8-sig"))))
     assert rows[1][2].startswith("'=")
