@@ -343,12 +343,21 @@ def api_card(day, style):
     return send_from_directory(config.CARDS, p.name, max_age=0)
 
 
-def main() -> None:
+def main(*, phone_sync: bool = False) -> None:
     config.ensure_dirs()
     s = _settings()
     port = int(s.get("port", 8891))
     print(f"하루서랍 대시보드: http://localhost:{port}")
-    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
+    stop = None
+    if phone_sync:
+        from .phone_bridge import start
+        stop = start()
+        print("폰 연결·완성 보고서 전달 켜짐 (수집·AI는 기존 예약 유지)")
+    try:
+        app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
+    finally:
+        if stop is not None:
+            stop.set()
 
 
 if __name__ == "__main__":

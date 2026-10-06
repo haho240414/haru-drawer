@@ -16,6 +16,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Shader
+import android.net.Uri
 import android.os.Build
 import android.util.Base64
 import android.util.DisplayMetrics
@@ -166,30 +167,25 @@ object Lockscreen {
         val count = d.optJSONObject("stats")?.optInt("count") ?: 0
         val title = lock?.optString("title").takeUnless { it.isNullOrEmpty() } ?: d.optString("headline")
         val lines = ArrayList<String>()
-        val arr = lock?.optJSONArray("lines")
-        if (arr != null) for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotEmpty() }?.let { lines.add("• $it") }
-        val done = Prefs(ctx).todosDone
-        val todos = d.optJSONArray("todos")
-        var open = 0
-        if (todos != null) for (i in 0 until todos.length()) {
-            val t = todos.optJSONObject(i) ?: continue
-            if (!t.optBoolean("done") && t.optString("key") !in done) open++
-        }
-        if (open > 0) lines.add("할 일 ${open}개 남음")
-        d.optString("tomorrow").takeIf { it.isNotEmpty() }?.let { lines.add("내일 아침: $it") }
-        val open0 = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val quick = d.optJSONArray("quick_summary")
+        val arr = if (quick != null && quick.length() > 0) quick else lock?.optJSONArray("lines")
+        if (arr != null) for (i in 0 until minOf(3, arr.length())) arr.optString(i).takeIf { it.isNotEmpty() }?.let { lines.add("${i + 1}. $it") }
+        val open0 = Intent(Intent.ACTION_VIEW, Uri.parse("haru://report/${bundle.optString("day")}"), ctx, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pi = PendingIntent.getActivity(ctx, 0, open0, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_haru)
-            .setContentTitle("하루서랍 · ${d.optString("label")} · ${count}개")
-            .setContentText(title)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(title + "\n" + lines.joinToString("\n")))
+            .setContentTitle("하루서랍 · ${d.optString("label")} · ${count}개 자료")
+            .setContentText(lines.firstOrNull() ?: title)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n").ifEmpty { title })
+                .setSummaryText("눌러서 상세 브리핑 읽기"))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setShowWhen(true)
             .setContentIntent(pi)
-            .setColor(Color.parseColor("#6366f1"))
+            .addAction(R.drawable.ic_stat_haru, "보고서 읽기", pi)
+            .setColor(Color.parseColor("#795c41"))
             .build()
         try {
             NotificationManagerCompat.from(ctx).notify(NOTIF_ID, n)

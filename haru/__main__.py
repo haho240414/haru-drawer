@@ -30,7 +30,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("export", help="분석된 보고서를 날짜별 노트북 파일로 저장 (AI 재호출 없이)")
     p.add_argument("--day", action="append")
     p.add_argument("--output", type=Path)
-    sub.add_parser("serve")
+    serve_parser = sub.add_parser("serve")
+    serve_parser.add_argument("--phone-sync", action="store_true", help="완성된 보고서의 폰 전달을 함께 실행 (새 수집·AI 없음)")
     sub.add_parser("daemon")
     p = sub.add_parser("pair")
     p.add_argument("--reset", action="store_true")
@@ -126,7 +127,7 @@ def main(argv=None) -> int:
         return 0
     if a.cmd == "serve":
         from .server import main as serve
-        serve()
+        serve(phone_sync=a.phone_sync)
         return 0
     if a.cmd == "daemon":
         from .daemon import main as daemon

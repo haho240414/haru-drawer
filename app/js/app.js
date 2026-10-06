@@ -98,6 +98,13 @@ async function showDay(day) {
   };
   const rep = document.getElementById("report");
   renderReport(rep, data, ctx);
+  if (isNative && d) {
+    const st = await Source.status().catch(() => ({}));
+    const note = document.createElement("aside");
+    note.className = "phone-brief-status";
+    note.innerHTML = `${icon("smartphone")}<div><b>${st.wallpaperApplied ? "잠금화면에도 담아두었어요" : "잠금화면에서 오늘의 요약을 읽어보세요"}</b><p>화면을 켜면 3줄 요약, 알림을 누르면 상세 브리핑이 열려요.</p></div><a class="btn small" href="#/settings">잠금화면 설정</a>`;
+    rep.prepend(note);
+  }
   if (d && !isNative) {
     document.getElementById("saveFiles").onclick = async (ev) => {
       const button = ev.currentTarget;
@@ -354,8 +361,14 @@ async function showSettings() {
 
 async function showSettingsPhone() {
   const s = await Source.settings();
-  $view.innerHTML = `<div class="page-heading"><h1>설정</h1><p>수집과 보고서를 내 생활에 맞춰 설정하세요.</p></div>
-    <div class="card"><h2>잠금화면</h2>
+  const st = await Source.status().catch(() => ({}));
+  $view.innerHTML = `<div class="page-heading"><h1>잠금화면과 읽기</h1><p>휴대폰을 켤 때, 오늘의 이야기가 먼저 보여요.</p></div>
+    <div class="card lock-setup"><p class="eyebrow">오늘을 꺼내보는 가장 짧은 방법</p><h2>3줄로 먼저, 자세한 내용은 앱에서</h2>
+      <p>노트북이 정리를 마치면 폰에서 받아 잠금화면에 갱신해요. 알림의 <b>보고서 읽기</b>를 누르면 그날의 상세 브리핑과 원본 내용 정리를 읽을 수 있어요.</p>
+      <p class="meta">${st.reportDay ? `최근 받은 보고서 · ${esc(st.reportDay)}` : "맥 연결 후 첫 보고서를 받아보세요."}${st.lastSync ? ` · 마지막 확인 ${esc(new Date(st.lastSync).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }))}` : ""}</p>
+      <div class="row2"><button class="btn primary" id="enableLock">요약을 잠금화면에 표시</button><a class="btn" href="#/">보고서 읽기</a></div>
+    </div>
+    <div class="card"><h2>표시 방법</h2>
       <label class="todo"><input type="checkbox" id="wall" ${s.wallpaper ? "checked" : ""}><span style="flex:1">잠금화면 배경에 오늘 정리 카드 넣기</span></label>
       <label class="todo"><input type="checkbox" id="notif" ${s.notify ? "checked" : ""}><span style="flex:1">잠금화면 알림으로도 보여 주기 (조용히, 소리 없음)</span></label>
       <div class="field"><label>카드 모양</label><div class="seg" id="seg">
@@ -363,20 +376,36 @@ async function showSettingsPhone() {
       <div class="field"><label>배경</label><div class="row2">
         <button class="btn small" id="bgPick">내 사진 고르기</button><button class="btn small" id="bgDefault">기본 그라데이션</button>
         <span class="meta">${s.bg === "photo" ? "내 사진 사용 중" : "기본 그라데이션"}</span></div></div>
+      <p class="hint">잠금화면 배경에 표시한 내용은 폰을 켠 사람에게 보여요. 알림은 휴대폰의 잠금화면 알림 설정에 따라 표시됩니다.</p>
       <div id="prev" style="margin-top:10px"></div>
       <div class="row2" style="margin-top:10px"><button class="btn primary small" id="apply">지금 적용</button></div>
     </div>
-    <div class="card"><h2>잘 돌게 하려면</h2>
+    <div class="card"><h2>보고서 받기</h2><button class="btn" id="receive">지금 새 보고서 확인</button>
+      <p class="meta">앱을 열 때와 백그라운드에서 주기적으로 확인해요. 절전·네트워크 상태에 따라 수신이 늦어질 수 있어요. 노트북의 분석은 매일 정해둔 시각에 진행됩니다.</p></div>
+    <div class="card"><h2>알림과 배터리</h2><p class="meta">알림 ${st.notifications ? "허용됨" : "허용 필요"} · 백그라운드 ${st.batteryOk ? "절전 예외 적용됨" : "절전 설정 확인 가능"}</p>
       <div class="row2"><button class="btn small" id="perm">알림 허용</button><button class="btn small" id="batt">배터리 최적화 끄기</button></div>
       <p class="meta">삼성 폰은 절전 때문에 백그라운드 확인이 늦어질 수 있어요. '배터리 최적화 끄기'를 권해요.</p></div>`;
-  const save = async (patch) => { await Source.saveSettings(patch); showSettingsPhone(); };
+  const save = async (patch) => { const r = await Source.saveSettings(patch); if (r.msg) toast(r.msg); showSettingsPhone(); };
+  document.getElementById("enableLock").onclick = async (ev) => {
+    const button = ev.currentTarget;
+    button.disabled = true;
+    try {
+      const permission = await Source.requestNotifications();
+      await Source.saveSettings({ wallpaper: true, notify: true });
+      await Source.sync();
+      const r = await Source.applyLockscreen();
+      toast(r.ok ? (permission.granted ? "잠금화면 요약과 읽기 알림을 켰어요" : "잠금화면 배경에 요약을 넣었어요. 알림은 권한이 필요해요.") : r.msg);
+      await showSettingsPhone();
+    } catch (e) { toast(e.message); button.disabled = false; }
+  };
+  document.getElementById("receive").onclick = async () => { await runNow(); showSettingsPhone(); };
   document.getElementById("wall").onchange = (e) => save({ wallpaper: e.target.checked });
   document.getElementById("notif").onchange = (e) => save({ notify: e.target.checked });
   document.querySelectorAll("#seg [data-style]").forEach((b) => (b.onclick = () => save({ style: b.dataset.style })));
   document.getElementById("bgPick").onclick = async () => { await Source.pickBackground(); showSettingsPhone(); };
   document.getElementById("bgDefault").onclick = () => save({ bg: "gradient" });
   document.getElementById("apply").onclick = async () => { const r = await Source.applyLockscreen(); toast(r.ok ? "적용했어요" : (r.msg || "아직 받은 정리가 없어요")); };
-  document.getElementById("perm").onclick = async () => { await Source.requestNotifications(); toast("알림 권한을 확인했어요"); };
+  document.getElementById("perm").onclick = async () => { const r = await Source.requestNotifications(); toast(r.granted ? "알림을 허용했어요" : "알림이 꺼져 있어요. 휴대폰 설정에서 허용할 수 있어요."); showSettingsPhone(); };
   document.getElementById("batt").onclick = () => Source.openBatterySettings();
   try {
     const p = await Source.previewLockscreen(s.style);
@@ -387,8 +416,12 @@ async function showSettingsPhone() {
 // ---------------- 정리하기 버튼 ----------------
 async function runNow(opts = {}) {
   if (isNative) {
-    const r = await Source.run();
-    toast(r.ok ? "맥에 정리를 부탁했어요 (몇 분 걸려요)" : (r.msg || "맥과 연결돼 있지 않아요"));
+    $run.disabled = true;
+    try {
+      const r = await Source.sync();
+      toast(r.ok ? (r.lockMsg || (r.received ? "새 보고서를 받았어요" : "새 보고서를 확인했어요")) : (r.msg || "맥과 연결돼 있지 않아요"));
+      await route();
+    } finally { $run.disabled = false; }
     return;
   }
   const r = await Source.run({ force: false, ...opts });
@@ -410,7 +443,8 @@ async function runNow(opts = {}) {
   route();
 }
 $run.onclick = () => runNow();
-$run.innerHTML = `${icon("list")} 정리하기`;
+$run.innerHTML = isNative ? `${icon("file-text")} 새 보고서` : `${icon("list")} 정리하기`;
+if (isNative) $run.title = "노트북에서 완성한 새 보고서 받기";
 
 // ---------------- 길 찾기 ----------------
 async function route() {
@@ -438,15 +472,20 @@ async function firstRun() {
   if (!isNative) return;
   try {
     const st = await Source.status();
-    if (!st.paired && !location.hash) location.hash = "#/link";
-    if (!st.notifications && pref.get("askedNotif", "") !== "1") {
-      pref.set("askedNotif", "1");
-      await Source.requestNotifications();
-    }
+    const launch = await Source.takeReportRoute();
+    if (launch.day) location.hash = `#/day/${launch.day}`;
+    else if (!st.paired && !location.hash) location.hash = "#/link";
   } catch { /* 네이티브 준비 전이면 다음에 */ }
 }
 
 if (isNative) {
+  Source.addListener("openReport", async () => {
+    const launch = await Source.takeReportRoute();
+    if (launch.day) {
+      const hash = `#/day/${launch.day}`;
+      if (location.hash === hash) route(); else location.hash = hash;
+    }
+  });
   // 새 정리가 도착하면 (네이티브가 알려 줌) 화면 갱신
   Source.addListener("digest", () => { if (!location.hash || location.hash === "#/" || location.hash.startsWith("#/day")) route(); });
   Source.addListener("shared", () => { if (location.hash === "#/add") route(); });

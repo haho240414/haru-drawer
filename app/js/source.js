@@ -65,6 +65,7 @@ export const PhoneSource = {
   async setTodo(key, done) { return Haru.setTodo({ key, done }); },
   async hide() { return { ok: false }; },
   async sync() { return Haru.syncNow(); },
+  async takeReportRoute() { return Haru.takeReportRoute(); },
   async pair(code) { return Haru.pair({ code }); },
   async unpair() { return Haru.unpair(); },
   async scanQr() { return Haru.scanQr(); },

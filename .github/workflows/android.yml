@@ -28,6 +28,10 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m pytest -q tests
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm test
 
   build:
     name: APK 빌드 + 네이티브 단위 테스트 (암호 호환)

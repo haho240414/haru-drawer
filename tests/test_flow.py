@@ -39,6 +39,56 @@ def png_bytes(color="red"):
     return b.getvalue()
 
 
+def test_phone_bridge_delivers_cached_report_and_keeps_report_timezone(paired, monkeypatch):
+    from haru import daemon, phone_bridge, pipeline
+    s, phone = paired
+    s = config.update_settings({"timezone": "Asia/Seoul", "youtube": {"enabled": True, "report_hour": 0}})
+    phone.send_up({"t": "hello", "tz": "America/Los_Angeles", "dev": {"w": 1080, "h": 2340}})
+    sent = []
+    monkeypatch.setattr(phone_bridge, "latest_day", lambda settings: "2026-10-05")
+    monkeypatch.setattr(phone_bridge, "publish_day", lambda day, settings, *args, **kw: sent.append((day, kw["force"])) or True)
+    monkeypatch.setattr(pipeline, "run", lambda **kw: pytest.fail("연결만으로 AI·새 수집을 실행하면 안 됨"))
+    phone_bridge.poll_once(s)
+    assert sent == [("2026-10-05", True)]
+    assert config.load_settings()["timezone"] == "Asia/Seoul"
+    assert store.kv_get("phone_bridge_pending") == []
+    messages = phone.poll(phone.down)
+    hb = [m.obj for m in messages if m.obj["t"] == "hb"][-1]
+    assert "T00:00:00+09:00" in hb["next"]
+    phone_bridge.poll_once(config.load_settings())
+    assert len(sent) == 1  # 변경 없는 확인은 같은 보고서를 또 전송하지 않는다.
+
+
+def test_phone_bridge_retries_failed_delivery_without_new_request(paired, monkeypatch):
+    from haru import daemon, phone_bridge
+    s, phone = paired
+    responses = iter([{"refresh": True, "resend": []}, {"refresh": False, "resend": []}, {"refresh": False, "resend": []}])
+    monkeypatch.setattr(daemon, "handle_phone", lambda *a, **kw: next(responses))
+    monkeypatch.setattr(phone_bridge, "latest_day", lambda settings: "2026-10-05")
+    calls = []
+    def publish(*a, **kw):
+        calls.append(a[0])
+        if len(calls) == 1:
+            raise OSError("一時的な切断")
+        return True
+    monkeypatch.setattr(phone_bridge, "publish_day", publish)
+    phone_bridge.poll_once(s)
+    assert store.kv_get("phone_bridge_pending") == [daemon.LATEST]
+    phone_bridge.poll_once(s)
+    assert store.kv_get("phone_bridge_pending") == []
+    phone_bridge.poll_once(s)
+    assert calls == ["2026-10-05", "2026-10-05"]
+
+
+def test_phone_bundle_preserves_quick_briefing_and_original_notes(home):
+    from haru.pipeline import build_bundle
+    digest = {"day": "2026-10-05", "version": 1, "quick_summary": ["하나", "둘", "셋"],
+              "items": [{"id": "test-video", "briefing": [{"heading": "주장", "body": "상세 설명"}],
+                         "transcript_sections": [{"part": 1, "sections": [{"time": "00:00–01:00", "heading": "배경", "body": "원본 정리"}]}]}]}
+    bundle = json.loads(build_bundle(digest, {}))
+    assert bundle["digest"] == digest
+
+
 def test_crypto_roundtrip_and_tamper():
     k = crypto.new_key()
     env = crypto.seal(k, "topic-a", b"hello")
