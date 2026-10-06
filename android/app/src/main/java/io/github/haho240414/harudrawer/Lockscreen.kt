@@ -99,10 +99,32 @@ object Lockscreen {
         }
         val card = cardBitmap(bundle, style)
         if (card != null) {
-            c.drawBitmap(card, Rect(0, 0, card.width, card.height), Rect(0, 0, w, h), paint)
+            val position = Prefs(ctx).cardPosition
+            if (position == "middle") {
+                c.drawBitmap(card, Rect(0, 0, card.width, card.height), Rect(0, 0, w, h), paint)
+            } else {
+                val content = visibleBounds(card)
+                val margin = (w * 0.05f).toInt()
+                val box = CardPlacement.box(w, h, content.width(), content.height(), position, margin)
+                c.drawBitmap(card, content, Rect(box[0], box[1], box[2], box[3]), paint)
+            }
             card.recycle()
         }
         return out
+    }
+
+    private fun visibleBounds(bitmap: Bitmap): Rect {
+        val row = IntArray(bitmap.width)
+        var left = bitmap.width; var right = 0; var top = bitmap.height; var bottom = 0
+        for (y in 0 until bitmap.height) {
+            bitmap.getPixels(row, 0, bitmap.width, 0, y, bitmap.width, 1)
+            for (x in row.indices) if ((row[x] ushr 24) >= 32) {
+                left = minOf(left, x); right = maxOf(right, x + 1)
+                top = minOf(top, y); bottom = maxOf(bottom, y + 1)
+            }
+        }
+        return if (left < right && top < bottom) Rect(left, top, right, bottom)
+            else Rect(0, 0, bitmap.width, bitmap.height)
     }
 
     fun cardBitmap(bundle: JSONObject, style: String): Bitmap? {
@@ -121,7 +143,7 @@ object Lockscreen {
         val wm = WallpaperManager.getInstance(ctx)
         if (p.wallpaper) {
             val stamp = if (p.bg == "photo") bgFile(ctx).lastModified() else 0L
-            val key = "${bundle.optString("day")}:${bundle.optInt("ver")}:${p.style}:${p.bg}:$stamp"
+            val key = "${bundle.optString("day")}:${bundle.optInt("ver")}:${p.style}:${p.bg}:$stamp:${p.cardPosition}"
             if (force || key != p.appliedKey) {
                 return try {
                     val bmp = compose(ctx, bundle, p.style, p.bg)

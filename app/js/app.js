@@ -373,6 +373,9 @@ async function showSettingsPhone() {
       <label class="todo"><input type="checkbox" id="notif" ${s.notify ? "checked" : ""}><span style="flex:1">잠금화면 알림으로도 보여 주기 (조용히, 소리 없음)</span></label>
       <div class="field"><label>카드 모양</label><div class="seg" id="seg">
         <button data-style="A" class="${s.style === "A" ? "on" : ""}">A 카드형</button><button data-style="B" class="${s.style === "B" ? "on" : ""}">B 큰 글씨</button></div></div>
+      <div class="field"><label for="cardPosition">카드 위치</label><select id="cardPosition">
+        ${[["top", "위쪽"], ["middle", "가운데"], ["bottom", "아래쪽"]].map(([value, label]) => `<option value="${value}" ${(s.cardPosition || "middle") === value ? "selected" : ""}>${label}</option>`).join("")}</select>
+        <p class="hint">휴대폰의 시계나 지문 버튼과 겹치면 위치를 바꿔보세요. 위·아래에서는 내용이 들어가도록 크기도 함께 조정돼요.</p></div>
       <div class="field"><label>배경</label><div class="row2">
         <button class="btn small" id="bgPick">내 사진 고르기</button><button class="btn small" id="bgDefault">기본 그라데이션</button>
         <span class="meta">${s.bg === "photo" ? "내 사진 사용 중" : "기본 그라데이션"}</span></div></div>
@@ -402,6 +405,7 @@ async function showSettingsPhone() {
   document.getElementById("wall").onchange = (e) => save({ wallpaper: e.target.checked });
   document.getElementById("notif").onchange = (e) => save({ notify: e.target.checked });
   document.querySelectorAll("#seg [data-style]").forEach((b) => (b.onclick = () => save({ style: b.dataset.style })));
+  document.getElementById("cardPosition").onchange = (e) => save({ cardPosition: e.target.value });
   document.getElementById("bgPick").onclick = async () => { await Source.pickBackground(); showSettingsPhone(); };
   document.getElementById("bgDefault").onclick = () => save({ bg: "gradient" });
   document.getElementById("apply").onclick = async () => { const r = await Source.applyLockscreen(); toast(r.ok ? "적용했어요" : (r.msg || "아직 받은 정리가 없어요")); };

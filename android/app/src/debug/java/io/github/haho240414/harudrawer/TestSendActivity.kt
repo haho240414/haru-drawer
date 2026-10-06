@@ -16,6 +16,17 @@ import java.io.File
 class TestSendActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        intent.getStringExtra("lockPosition")?.let { position ->
+            if (position in listOf("top", "middle", "bottom")) {
+                HaruPlugin.io.execute {
+                    Prefs(applicationContext).cardPosition = position
+                    Prefs(applicationContext).notify = false  // 큰 시계만 남는 경우에도 카드 위치를 확인한다.
+                    Lockscreen.apply(applicationContext, force = true)
+                }
+            }
+            finish()
+            return
+        }
         try {
             val f = File(cacheDir, intent.getStringExtra("file") ?: "")
             val mime = intent.getStringExtra("mime") ?: "application/octet-stream"
