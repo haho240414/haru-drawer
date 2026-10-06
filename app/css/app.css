@@ -1362,7 +1362,10 @@ details[open] > summary .disclosure-icon { transform:rotate(90deg); }
 .phone-brief-status b { font-size:14px; font-weight:550; }
 .phone-brief-status p { font-size:12px; color:var(--text-3); margin:5px 0 0; }
 .lock-setup > p:not(.eyebrow) { line-height:1.8; }
-@media(max-width:480px) { .phone-brief-status { flex-wrap:wrap; } .phone-brief-status a { margin-left:32px; } }
+@media(max-width:480px) {
+  .phone-brief-status { display:grid; grid-template-columns:20px minmax(0,1fr); align-items:start; }
+  .phone-brief-status a { grid-column:2; justify-self:start; margin-left:0; }
+}
 .seg { border-radius:12px; }
 .seg button.on { background:var(--accent-soft); }
 @media(min-width:1424px) {
