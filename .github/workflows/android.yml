@@ -2,7 +2,7 @@ name: 하루서랍 (맥 엔진 테스트 · 안드로이드 APK · 에뮬레이�
 
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: [main, 'claude/**', 'codex/**']
   workflow_dispatch:
 
 permissions:
@@ -28,6 +28,10 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m pytest -q tests
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm test
 
   build:
     name: APK 빌드 + 네이티브 단위 테스트 (암호 호환)

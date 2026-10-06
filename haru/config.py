@@ -26,6 +26,7 @@ ROOT = PKG_DIR.parent
 WEB_DIR = ROOT / "app"
 
 DEFAULTS: dict = {
+    "content": {"enabled": False, "start_day": None},  # 공개 영상 기반 블로그 초안·대표 이미지, 자동 발행 없음
     # 시간대 (폰이 연결되면 폰 시간대로 자동 갱신)
     "timezone": "Asia/Seoul",
     # 새벽 4시 전까지는 '어제'로 친다 (밤늦게 보낸 것도 그날 정리에 들어가게)
@@ -39,7 +40,11 @@ DEFAULTS: dict = {
         "model": None,
         "batch": 5,               # 한 번에 분석할 항목 수
         "timeout": 300,
+        # Codex 사용 한도가 차면 이 맥의 로컬 모델로 대신 (qwen3.6:27b: 캡처 읽기 가능, 항목당 1분 안팎)
+        "fallback": "ollama",
         "ollama_model": "qwen3.6:27b",
+        "ollama_batch": 3,
+        "ollama_timeout": 1200,
     },
     "relay": {
         "server": "https://ntfy.sh",
@@ -49,13 +54,18 @@ DEFAULTS: dict = {
     },
     "categories": [
         "부동산", "재테크·투자", "AI·테크", "업무", "콘텐츠·SNS",
-        "쇼핑", "건강·운동", "맛집·여행", "생활·정보", "기타",
+        "쇼핑", "건강·운동", "맛집·여행", "생활·정보", "휴식", "기타",
     ],
     # 분석할 때 참고하는 사용자 소개 (설정에서 고칠 수 있음)
     "profile": "부동산·재테크, AI 자동화, 콘텐츠 제작에 관심이 많은 직장인. 링크·캡처를 카톡 '나에게 보내기'로 모아 둔다.",
     # 폰이 페어링 때 알려 주는 화면 크기 (모르면 갤럭시 S 기본값)
     "device": {"w": 1080, "h": 2340, "density": 3.0, "model": ""},
     "port": 8891,
+    # 같은 보고서를 노트북의 읽을 수 있는 파일·분류 폴더로도 보관.
+    "archive": {"enabled": True, "directory": None},  # 기본 ~/하루서랍/정리
+    "youtube": {"enabled": False, "mode": "api", "playlists": [], "report_hour": 22},  # 한국 시각·토큰은 별도 파일
+    "transcription": {"enabled": False, "python": None, "model": "mlx-community/whisper-medium-mlx",
+                      "cache_directory": None, "language": None, "max_seconds": 10800, "timeout": 3600},
 }
 
 

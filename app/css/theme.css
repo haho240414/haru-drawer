@@ -1,0 +1,60 @@
+/* One palette for the app and the self-contained reading documents. */
+:root {
+  --bg:#faf9f6;
+  --surface:#fffefa;
+  --surface-2:#eeece6;
+  --nav-bg:#f0eee8;
+  --text:#2d3433;
+  --text-2:#535e5a;
+  --text-3:#626b65;
+  --line:#dedfd7;
+  --accent:#89583e;
+  --accent-soft:#f0e8dd;
+  --warn:#985520;
+  --warn-soft:#f7eee5;
+  --ok:#36744a;
+  --error:#b13f34;
+  color-scheme:light;
+}
+@media(prefers-color-scheme:dark) {
+  :root:not([data-theme=light]) {
+    --bg:#1b1f20;
+    --surface:#222729;
+    --surface-2:#2a3031;
+    --nav-bg:#161a1b;
+    --text:#eaece6;
+    --text-2:#c3cbc6;
+    --text-3:#a4afa9;
+    --line:#3b4542;
+    --accent:#ddb58f;
+    --accent-soft:#342c25;
+    --warn:#e8b584;
+    --warn-soft:#3b2f25;
+    --ok:#92c29c;
+    --error:#f0a39a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme=dark] {
+  --bg:#1b1f20;
+  --surface:#222729;
+  --surface-2:#2a3031;
+  --nav-bg:#161a1b;
+  --text:#eaece6;
+  --text-2:#c3cbc6;
+  --text-3:#a4afa9;
+  --line:#3b4542;
+  --accent:#ddb58f;
+  --accent-soft:#342c25;
+  --warn:#e8b584;
+  --warn-soft:#3b2f25;
+  --ok:#92c29c;
+  --error:#f0a39a;
+  color-scheme:dark;
+}
+.appearance {display:inline-flex;align-items:center;gap:8px;flex:none;white-space:nowrap;color:var(--text-3);font-size:12px;}
+.appearance[hidden] {display:none;}
+.appearance select {width:auto;min-width:88px;max-width:112px;min-height:44px;padding:7px 9px;font:inherit;font-size:13px;color:var(--text);border:1px solid var(--line);border-radius:8px;background:var(--surface);cursor:pointer;}
+.appearance select:focus-visible {outline:2px solid var(--accent);outline-offset:3px;}
+@media(max-width:600px) {.appearance>span{display:none;}.appearance select{min-width:82px;}}
+@media print { :root,:root[data-theme=dark] {--bg:#fff;--surface:#fff;--surface-2:#f3f3f3;--nav-bg:#fff;--text:#000;--text-2:#333;--text-3:#555;--line:#ccc;--accent:#333;--accent-soft:#fff;color-scheme:light;} .appearance{display:none!important;} }

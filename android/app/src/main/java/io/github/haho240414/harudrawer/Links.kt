@@ -17,6 +17,11 @@ object Links {
     fun handle(ctx: Context, intent: Intent?): Boolean {
         val data = intent?.data ?: return false
         if (data.scheme != "haru") return false
+        ReportLink.dayFrom(data.toString())?.let { day ->
+            ReportLink.offer(day)
+            HaruPlugin.emit("openReport", JSONObject().put("day", day))
+            return true
+        }
         when (data.host) {
             "pair" -> {
                 val code = data.toString().substringAfter("haru://pair/", "")

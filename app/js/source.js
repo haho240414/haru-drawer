@@ -7,7 +7,12 @@ const Haru = isNative ? registerPlugin("Haru") : null;
 
 async function api(path, opts = {}) {
   const r = await fetch(path, opts);
-  if (!r.ok && r.status !== 409) throw new Error(`${r.status} ${await r.text()}`);
+  if (!r.ok && r.status !== 409) {
+    const body = await r.text();
+    let msg = body;
+    try { msg = JSON.parse(body).msg || body; } catch { /* 일반 오류 응답 */ }
+    throw new Error(`${r.status} ${msg}`);
+  }
   return r.json();
 }
 const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
@@ -33,8 +38,15 @@ export const MacSource = {
   async pairing() { return api("/api/pairing"); },
   async resetPairing() { return post("/api/pairing/reset"); },
   async publish(day) { return post(`/api/publish/${day}`); },
+  async exportDay(day) { return post(`/api/archive/${day}`); },
   async settings() { return api("/api/settings"); },
   async saveSettings(patch) { return post("/api/settings", patch); },
+  async youtube() { return api("/api/youtube"); },
+  async youtubeClient(document) { return post("/api/youtube/client", document); },
+  async youtubeConnect() { return post("/api/youtube/connect"); },
+  async youtubeDisconnect() { return post("/api/youtube/disconnect"); },
+  async youtubePlaylists() { return api("/api/youtube/playlists"); },
+  async youtubeSelection(playlists, enabled) { return post("/api/youtube/selection", { playlists, enabled }); },
   openUrl(url) { window.open(url, "_blank", "noopener"); },
 };
 
@@ -53,6 +65,7 @@ export const PhoneSource = {
   async setTodo(key, done) { return Haru.setTodo({ key, done }); },
   async hide() { return { ok: false }; },
   async sync() { return Haru.syncNow(); },
+  async takeReportRoute() { return Haru.takeReportRoute(); },
   async pair(code) { return Haru.pair({ code }); },
   async unpair() { return Haru.unpair(); },
   async scanQr() { return Haru.scanQr(); },

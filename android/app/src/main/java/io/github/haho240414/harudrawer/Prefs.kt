@@ -37,6 +37,7 @@ class Prefs(ctx: Context) {
     var notify: Boolean get() = sp.getBoolean("notify", true); set(v) = sp.edit().putBoolean("notify", v).apply()
     var style: String get() = str("style") ?: "A"; set(v) = put("style", v)
     var bg: String get() = str("bg") ?: "gradient"; set(v) = put("bg", v)
+    var cardPosition: String get() = str("cardPosition") ?: "middle"; set(v) = put("cardPosition", v)
     /** 같은 보고서·같은 모양이면 배경을 다시 설정하지 않으려고 기억 */
     var appliedKey: String? get() = str("appliedKey"); set(v) = put("appliedKey", v)
     /** 우리가 잠금화면 배경을 바꾼 적이 있는지 (끌 때 되돌리기) */

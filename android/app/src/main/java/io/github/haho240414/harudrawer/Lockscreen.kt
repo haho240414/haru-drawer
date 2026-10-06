@@ -16,6 +16,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Shader
+import android.net.Uri
 import android.os.Build
 import android.util.Base64
 import android.util.DisplayMetrics
@@ -98,10 +99,32 @@ object Lockscreen {
         }
         val card = cardBitmap(bundle, style)
         if (card != null) {
-            c.drawBitmap(card, Rect(0, 0, card.width, card.height), Rect(0, 0, w, h), paint)
+            val position = Prefs(ctx).cardPosition
+            if (position == "middle") {
+                c.drawBitmap(card, Rect(0, 0, card.width, card.height), Rect(0, 0, w, h), paint)
+            } else {
+                val content = visibleBounds(card)
+                val margin = (w * 0.05f).toInt()
+                val box = CardPlacement.box(w, h, content.width(), content.height(), position, margin)
+                c.drawBitmap(card, content, Rect(box[0], box[1], box[2], box[3]), paint)
+            }
             card.recycle()
         }
         return out
+    }
+
+    private fun visibleBounds(bitmap: Bitmap): Rect {
+        val row = IntArray(bitmap.width)
+        var left = bitmap.width; var right = 0; var top = bitmap.height; var bottom = 0
+        for (y in 0 until bitmap.height) {
+            bitmap.getPixels(row, 0, bitmap.width, 0, y, bitmap.width, 1)
+            for (x in row.indices) if ((row[x] ushr 24) >= 32) {
+                left = minOf(left, x); right = maxOf(right, x + 1)
+                top = minOf(top, y); bottom = maxOf(bottom, y + 1)
+            }
+        }
+        return if (left < right && top < bottom) Rect(left, top, right, bottom)
+            else Rect(0, 0, bitmap.width, bitmap.height)
     }
 
     fun cardBitmap(bundle: JSONObject, style: String): Bitmap? {
@@ -120,7 +143,7 @@ object Lockscreen {
         val wm = WallpaperManager.getInstance(ctx)
         if (p.wallpaper) {
             val stamp = if (p.bg == "photo") bgFile(ctx).lastModified() else 0L
-            val key = "${bundle.optString("day")}:${bundle.optInt("ver")}:${p.style}:${p.bg}:$stamp"
+            val key = "${bundle.optString("day")}:${bundle.optInt("ver")}:${p.style}:${p.bg}:$stamp:${p.cardPosition}"
             if (force || key != p.appliedKey) {
                 return try {
                     val bmp = compose(ctx, bundle, p.style, p.bg)
@@ -166,30 +189,25 @@ object Lockscreen {
         val count = d.optJSONObject("stats")?.optInt("count") ?: 0
         val title = lock?.optString("title").takeUnless { it.isNullOrEmpty() } ?: d.optString("headline")
         val lines = ArrayList<String>()
-        val arr = lock?.optJSONArray("lines")
-        if (arr != null) for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotEmpty() }?.let { lines.add("• $it") }
-        val done = Prefs(ctx).todosDone
-        val todos = d.optJSONArray("todos")
-        var open = 0
-        if (todos != null) for (i in 0 until todos.length()) {
-            val t = todos.optJSONObject(i) ?: continue
-            if (!t.optBoolean("done") && t.optString("key") !in done) open++
-        }
-        if (open > 0) lines.add("할 일 ${open}개 남음")
-        d.optString("tomorrow").takeIf { it.isNotEmpty() }?.let { lines.add("내일 아침: $it") }
-        val open0 = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val quick = d.optJSONArray("quick_summary")
+        val arr = if (quick != null && quick.length() > 0) quick else lock?.optJSONArray("lines")
+        if (arr != null) for (i in 0 until minOf(3, arr.length())) arr.optString(i).takeIf { it.isNotEmpty() }?.let { lines.add("${i + 1}. $it") }
+        val open0 = Intent(Intent.ACTION_VIEW, Uri.parse("haru://report/${bundle.optString("day")}"), ctx, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pi = PendingIntent.getActivity(ctx, 0, open0, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_haru)
-            .setContentTitle("하루서랍 · ${d.optString("label")} · ${count}개")
-            .setContentText(title)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(title + "\n" + lines.joinToString("\n")))
+            .setContentTitle("하루서랍 · ${d.optString("label")} · ${count}개 자료")
+            .setContentText(lines.firstOrNull() ?: title)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n").ifEmpty { title })
+                .setSummaryText("눌러서 상세 브리핑 읽기"))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setShowWhen(true)
             .setContentIntent(pi)
-            .setColor(Color.parseColor("#6366f1"))
+            .addAction(R.drawable.ic_stat_haru, "보고서 읽기", pi)
+            .setColor(Color.parseColor("#795c41"))
             .build()
         try {
             NotificationManagerCompat.from(ctx).notify(NOTIF_ID, n)

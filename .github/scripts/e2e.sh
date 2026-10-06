@@ -85,10 +85,29 @@ step "4. 화면"
 A shell am start -W -n "$PKG/.MainActivity"
 sleep 15
 A exec-out screencap -p > "$OUT/2_app_report.png"
+# 알림과 동일한 보고서 딥링크: 이미 열린 앱 + 종료된 앱에서 날짜를 소비해 해당 보고서로 이동.
+DAY="$(printf '%s\n' "$GOT" | head -1 | sed 's/\.json$//')"
+# Android 16은 강제 종료 시 알림/PendingIntent를 취소한다. 알림이 존재할 때 목적지를 검사한다.
+A shell dumpsys activity intents > "$OUT/report_intents.txt" 2>&1 || true
+check "보고서 알림 PendingIntent가 날짜를 포함" 'grep -q "haru://report/$DAY" "$OUT/report_intents.txt"'
+A shell am start -W -a android.intent.action.VIEW -d "haru://report/$DAY" "$PKG"
+sleep 5
+A exec-out screencap -p > "$OUT/2_report_link_warm.png"
+A shell am force-stop "$PKG"
+A shell am start -W -a android.intent.action.VIEW -d "haru://report/$DAY" "$PKG"
+sleep 15
+A exec-out screencap -p > "$OUT/2_report_link_cold.png"
+OPENED="$(A logcat -d -s HaruPlugin:I | grep -c "보고서 열기: $DAY" || true)"
+check "알림 보고서 목적지가 앱 실행 중·종료 후 각각 처리됨" '[ "$OPENED" = "2" ]'
 # 재연결 확인: 화면을 다시 띄워도 연결 딥링크를 또 처리하지 않아야 한다
 RELINK="$(A logcat -d -s HaruLinks:I | grep -c '연결:' || true)"
 echo "연결 처리 횟수: $RELINK"
+check "연결 딥링크는 한 번만 처리 (배경 바꿀 때 화면이 다시 만들어져도)" '[ "$RELINK" = "1" ]'
 # PIN 을 걸어 잠금화면이 반드시 뜨게 → 끄고 켜서 찍기
+A shell am start -W -n "$PKG/.TestSendActivity" --es lockPosition top
+sleep 5
+A shell run-as "$PKG" cat shared_prefs/haru.xml > "$OUT/position_prefs.xml" 2>/dev/null || true
+check "카드 위쪽 위치 적용" 'grep -q "gradient:0:top" "$OUT/position_prefs.xml"'
 A shell locksettings set-pin 1234 || true
 A shell input keyevent 223
 sleep 3

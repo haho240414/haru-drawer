@@ -39,6 +39,56 @@ def png_bytes(color="red"):
     return b.getvalue()
 
 
+def test_phone_bridge_delivers_cached_report_and_keeps_report_timezone(paired, monkeypatch):
+    from haru import daemon, phone_bridge, pipeline
+    s, phone = paired
+    s = config.update_settings({"timezone": "Asia/Seoul", "youtube": {"enabled": True, "report_hour": 0}})
+    phone.send_up({"t": "hello", "tz": "America/Los_Angeles", "dev": {"w": 1080, "h": 2340}})
+    sent = []
+    monkeypatch.setattr(phone_bridge, "latest_day", lambda settings: "2026-10-05")
+    monkeypatch.setattr(phone_bridge, "publish_day", lambda day, settings, *args, **kw: sent.append((day, kw["force"])) or True)
+    monkeypatch.setattr(pipeline, "run", lambda **kw: pytest.fail("연결만으로 AI·새 수집을 실행하면 안 됨"))
+    phone_bridge.poll_once(s)
+    assert sent == [("2026-10-05", True)]
+    assert config.load_settings()["timezone"] == "Asia/Seoul"
+    assert store.kv_get("phone_bridge_pending") == []
+    messages = phone.poll(phone.down)
+    hb = [m.obj for m in messages if m.obj["t"] == "hb"][-1]
+    assert "T00:00:00+09:00" in hb["next"]
+    phone_bridge.poll_once(config.load_settings())
+    assert len(sent) == 1  # 변경 없는 확인은 같은 보고서를 또 전송하지 않는다.
+
+
+def test_phone_bridge_retries_failed_delivery_without_new_request(paired, monkeypatch):
+    from haru import daemon, phone_bridge
+    s, phone = paired
+    responses = iter([{"refresh": True, "resend": []}, {"refresh": False, "resend": []}, {"refresh": False, "resend": []}])
+    monkeypatch.setattr(daemon, "handle_phone", lambda *a, **kw: next(responses))
+    monkeypatch.setattr(phone_bridge, "latest_day", lambda settings: "2026-10-05")
+    calls = []
+    def publish(*a, **kw):
+        calls.append(a[0])
+        if len(calls) == 1:
+            raise OSError("一時的な切断")
+        return True
+    monkeypatch.setattr(phone_bridge, "publish_day", publish)
+    phone_bridge.poll_once(s)
+    assert store.kv_get("phone_bridge_pending") == [daemon.LATEST]
+    phone_bridge.poll_once(s)
+    assert store.kv_get("phone_bridge_pending") == []
+    phone_bridge.poll_once(s)
+    assert calls == ["2026-10-05", "2026-10-05"]
+
+
+def test_phone_bundle_preserves_quick_briefing_and_original_notes(home):
+    from haru.pipeline import build_bundle
+    digest = {"day": "2026-10-05", "version": 1, "quick_summary": ["하나", "둘", "셋"],
+              "items": [{"id": "test-video", "briefing": [{"heading": "주장", "body": "상세 설명"}],
+                         "transcript_sections": [{"part": 1, "sections": [{"time": "00:00–01:00", "heading": "배경", "body": "원본 정리"}]}]}]}
+    bundle = json.loads(build_bundle(digest, {}))
+    assert bundle["digest"] == digest
+
+
 def test_crypto_roundtrip_and_tamper():
     k = crypto.new_key()
     env = crypto.seal(k, "topic-a", b"hello")
@@ -160,3 +210,65 @@ def test_hello_with_shares_publishes_latest_once(paired):
     daemon.loop_once(config.load_settings())
     digests = [m.obj["day"] for m in phone.poll(phone.down) if m.obj["t"] == "digest"]
     assert digests == ["2026-10-03"]
+
+
+def test_hiding_last_item_clears_report_and_phone_card(paired):
+    from haru import pipeline
+    from haru.ingest import import_share
+    from haru.server import app
+    s, phone = paired
+    import_share({"id": "only", "ts": "2026-10-03T10:00:00+09:00", "kind": "text",
+                  "text": "관리사무소 전화하기"}, None, 4)
+    pipeline.run(publish=True)
+    initial = store.get_digest("2026-10-03")
+    # 폰에서 체크한 할 일도 같은 노트북 보고서 파일에 반영한다.
+    key = initial["data"]["todos"][0]["key"]
+    phone.send_up({"t": "todo", "key": key, "done": True})
+    from haru import archive, daemon
+    daemon.handle_phone(relay.Relay.from_settings(config.load_settings()), config.load_settings())
+    local_digest = json.loads((archive.day_dir("2026-10-03") / "보고서.json").read_text())
+    assert local_digest["todos"][0]["done"] is True
+    response = app.test_client().post("/api/item/s:only/hide")
+    assert response.status_code == 200
+    result = pipeline.run(days=["2026-10-03"], publish=True)
+    digest = store.get_digest("2026-10-03")
+    assert digest["version"] > initial["version"]
+    assert digest["data"]["items"] == []
+    assert digest["data"]["todos"] == []
+    assert digest["data"]["lock"]["lines"] == []
+    assert result["published"] == ["2026-10-03"]
+    messages = [m for m in phone.poll(phone.down) if m.obj["t"] == "digest"]
+    bundle = json.loads(phone.fetch_attachment(messages[-1], phone.down))
+    assert bundle["digest"]["stats"]["count"] == 0
+    assert bundle["digest"]["items"] == []
+
+
+def test_lockcards_render_concurrently(home):
+    from concurrent.futures import ThreadPoolExecutor
+    from haru.lockcard import render
+    from PIL import Image
+    card = {"day": "2026-10-02", "label": "10월 2일 (금)", "count": 1, "title": "관리사무소 전화",
+            "lines": ["토요일 오전 10시 임장"], "todos": 1, "readLater": 0, "cats": [], "updated": "18:00"}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(render, card, style, config.CARDS / f"parallel_{style}.png", 360, 780, 1.0)
+                for style in ("A", "B")]
+        paths = [j.result() for j in jobs]
+    for path in paths:
+        with Image.open(path) as image:
+            assert image.size == (360, 780) and image.mode == "RGBA"
+    assert paths[0].read_bytes() != paths[1].read_bytes()
+
+
+def test_file_export_failure_does_not_block_phone(paired, monkeypatch):
+    from haru import archive, pipeline
+    from haru.ingest import import_share
+    _, phone = paired
+    import_share({"id": "export-failure", "ts": "2026-10-03T10:00:00+09:00", "kind": "text",
+                  "text": "보고서 파일과 폰 전달을 확인하기"}, None, 4)
+    def fail(*_):
+        raise OSError("시험용 저장 권한 오류")
+    monkeypatch.setattr(archive, "export_day", fail)
+    result = pipeline.run(publish=True, log=lambda *_: None)
+    assert result["exported"] == [] and result["export_errors"] == ["2026-10-03"]
+    assert result["published"] == ["2026-10-03"]
+    assert any(message.obj["t"] == "digest" for message in phone.poll(phone.down))

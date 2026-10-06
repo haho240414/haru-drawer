@@ -169,8 +169,10 @@ def find_analyzed_by_url(url_key: str, exclude_id: str) -> dict | None:
 
 def days_with_items(limit: int = 120) -> list[dict]:
     rows = db().execute(
-        "SELECT day, COUNT(*) n, SUM(status='analyzed') analyzed FROM items WHERE status!='hidden'"
-        " GROUP BY day ORDER BY day DESC LIMIT ?", (limit,)).fetchall()
+        "SELECT d.day, COUNT(i.id) n, SUM(i.status='analyzed') analyzed"
+        " FROM (SELECT day FROM items WHERE status!='hidden' UNION SELECT day FROM digests) d"
+        " LEFT JOIN items i ON i.day=d.day AND i.status!='hidden'"
+        " GROUP BY d.day ORDER BY MAX(d.day) DESC LIMIT ?", (limit,)).fetchall()
     out = []
     for r in rows:
         dg = db().execute("SELECT version, generated_at, published_at FROM digests WHERE day=?", (r["day"],)).fetchone()
@@ -247,3 +249,10 @@ def set_todo_done(key: str, done: bool) -> None:
 
 def todos_done() -> set[str]:
     return {r["key"] for r in db().execute("SELECT key FROM todos_done").fetchall()}
+
+
+def days_for_todo(key: str) -> list[str]:
+    if not key:
+        return []
+    rows = db().execute("SELECT day, data FROM digests WHERE data LIKE ?", (f"%{key}%",)).fetchall()
+    return [r["day"] for r in rows if any(t.get("key") == key for t in json.loads(r["data"]).get("todos", []))]

@@ -77,7 +77,7 @@ def next_schedule(settings: dict) -> str | None:
     return iso(min(cands)) if cands else None
 
 
-def handle_phone(rel: Relay, settings: dict) -> dict:
+def handle_phone(rel: Relay, settings: dict, *, adopt_timezone: bool = True) -> dict:
     """폰 → 맥 메시지 처리. 결과: {'items': n, 'refresh': bool, 'resend': [days]}"""
     st = store.kv_get("up_state", {"since": 0, "seen": []})
     seen = set(st.get("seen", []))
@@ -97,7 +97,7 @@ def handle_phone(rel: Relay, settings: dict) -> dict:
                 if dev.get("w") and dev.get("h"):
                     patch["device"] = {"w": int(dev["w"]), "h": int(dev["h"]),
                                        "density": float(dev.get("density") or 3.0), "model": dev.get("model", "")}
-                if obj.get("tz") and obj["tz"] != settings.get("timezone"):
+                if adopt_timezone and obj.get("tz") and obj["tz"] != settings.get("timezone"):
                     patch["timezone"] = obj["tz"]
                 if patch:
                     settings = config.update_settings(patch)
@@ -131,6 +131,8 @@ def handle_phone(rel: Relay, settings: dict) -> dict:
                 out["resend"].append(obj.get("day") or LATEST)
             elif t == "todo":
                 store.set_todo_done(obj.get("key", ""), bool(obj.get("done")))
+                from .archive import refresh_todo
+                refresh_todo(obj.get("key", ""))
             store.kv_set("phone_last", iso(now()))
         except Exception as e:
             log.exception("폰 메시지 처리 실패: %s", e)

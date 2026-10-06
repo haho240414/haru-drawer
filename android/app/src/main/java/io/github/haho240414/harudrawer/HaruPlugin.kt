@@ -81,6 +81,13 @@ class HaruPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun takeReportRoute(call: PluginCall) {
+        val day = ReportLink.take()
+        if (day != null) Log.i(TAG, "보고서 열기: $day")
+        call.resolve(JSObject().put("day", day ?: JSONObject.NULL))
+    }
+
+    @PluginMethod
     fun getStatus(call: PluginCall) {
         val p = Prefs(context)
         val pm = context.getSystemService(PowerManager::class.java)
@@ -98,6 +105,8 @@ class HaruPlugin : Plugin() {
         r.put("batteryOk", pm.isIgnoringBatteryOptimizations(context.packageName))
         r.put("sdk", Build.VERSION.SDK_INT)
         r.put("model", Build.MODEL ?: "")
+        r.put("reportDay", Digests.days(context).firstOrNull() ?: "")
+        r.put("wallpaperApplied", p.wallpaper && p.wallpaperSet && !p.appliedKey.isNullOrEmpty())
         call.resolve(r)
     }
 
@@ -196,7 +205,8 @@ class HaruPlugin : Plugin() {
     fun getSettings(call: PluginCall) {
         val p = Prefs(context)
         call.resolve(JSObject().put("wallpaper", p.wallpaper).put("notify", p.notify).put("style", p.style)
-            .put("bg", if (p.bg == "photo" && Lockscreen.bgFile(context).exists()) "photo" else "gradient"))
+            .put("bg", if (p.bg == "photo" && Lockscreen.bgFile(context).exists()) "photo" else "gradient")
+            .put("cardPosition", p.cardPosition))
     }
 
     @PluginMethod
@@ -206,6 +216,7 @@ class HaruPlugin : Plugin() {
         call.getBoolean("notify")?.let { p.notify = it }
         call.getString("style")?.let { if (it == "A" || it == "B") p.style = it }
         call.getString("bg")?.let { if (it == "gradient" || it == "photo") p.bg = it }
+        call.getString("cardPosition")?.let { if (it in listOf("top", "middle", "bottom")) p.cardPosition = it }
         bg(call) {
             val msg = Lockscreen.apply(context)
             JSONObject().put("ok", msg == null).put("msg", msg ?: "")
